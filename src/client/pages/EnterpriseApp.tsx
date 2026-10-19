@@ -1,8 +1,9 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { formatRange, DISCLAIMER } from "@shared/rules/evaluate";
 import { api, putFile } from "../lib/api";
 import { compressImage, extractionFromPdfText, maybeConvertHeic, parseSpreadsheet, readPdf } from "../lib/files";
+import { recognizePages } from "../lib/vision";
 import { Banner, Button, Card, Input, Label, Textarea, TierBadge } from "../components/ui";
 import { ChangePasswordPage } from "./AuthPages";
 
@@ -23,18 +24,19 @@ export function EnterpriseApp() {
   if (me.user.role !== "enterprise") return <Navigate to="/admin" replace />;
   if (me.user.must_change_password && location.pathname !== "/app/change-password") return <Navigate to="/app/change-password" replace />;
   return (
-    <div className="min-h-screen bg-bg">
-      <header className="no-print sticky top-0 z-20 border-b border-line bg-white/90 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-3xl items-center justify-between px-4">
-          <Link to="/app" className="font-extrabold text-navy">企策AI</Link>
-          <nav className="flex gap-3 text-sm">
+    <div className="flex h-dvh min-h-0 flex-col bg-bg">
+      <header className="no-print z-30 shrink-0 border-b border-line bg-white">
+        <div className="mx-auto flex min-h-14 max-w-3xl items-center justify-between gap-3 px-4">
+          <Link to="/app" className="shrink-0 font-extrabold text-navy">企策AI</Link>
+          <nav className="flex gap-3 overflow-x-auto text-sm whitespace-nowrap">
             <Link to="/app/upload">资料</Link>
             <Link to="/app/report">方案</Link>
             <Link to="/app/settings">设置</Link>
           </nav>
         </div>
       </header>
-      <main className="mx-auto max-w-3xl px-4 py-5">
+      <main className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-3xl px-4 py-5">
         <Routes>
           <Route index element={<StatusHome me={me} />} />
           <Route path="upload" element={<UploadPage me={me} />} />
@@ -42,6 +44,7 @@ export function EnterpriseApp() {
           <Route path="settings" element={<SettingsPage />} />
           <Route path="change-password" element={<ChangePasswordPage next="/app" />} />
         </Routes>
+        </div>
       </main>
     </div>
   );
@@ -73,6 +76,7 @@ function StatusHome({ me }: { me: Me }) {
 }
 
 interface LocalFile {
+  id: number;
   name: string;
   state: string;
 }
@@ -91,8 +95,9 @@ async function registerAndUpload(kind: "vat" | "social_security", file: File, on
     const pdf = await readPdf(file);
     if (pdf.pages.length) {
       source = "pdf_scan";
-      derived.push(...pdf.pages);
-      extraction = { detected_type: kind === "vat" ? "vat" : "social_security", parse_status: "partial", parse_note: "扫描件已转成页面图片，等待视觉识别或顾问处理", confidence: 0.4, source: "client", warnings: ["扫描件需要视觉模型或顾问处理"] };
+      onState("正在调用视觉模型");
+      for (const page of pdf.pages) derived.push(await compressImage(page, 2_500_000));
+      extraction = await recognizePages(kind, derived);
     } else {
       source = "pdf_text";
       extraction = extractionFromPdfText(pdf.text, file.name);
@@ -100,9 +105,10 @@ async function registerAndUpload(kind: "vat" | "social_security", file: File, on
   } else if (/\.(jpe?g|png|heic|webp)$/i.test(file.name) || file.type.startsWith("image/")) {
     onState("正在压缩图片");
     const converted = await maybeConvertHeic(file);
-    blob = await compressImage(converted);
+    blob = await compressImage(converted, 2_500_000);
     source = "image";
-    extraction = { detected_type: kind === "vat" ? "vat" : "social_security", parse_status: "partial", parse_note: "照片已上传。未配置视觉模型时，请交给顾问处理。", confidence: 0.4, source: "client_vision", warnings: ["照片识别需要视觉模型"] };
+    onState("正在调用视觉模型");
+    extraction = await recognizePages(kind, [blob]);
   } else {
     throw new Error("请上传 Excel、CSV、PDF、JPG、PNG 或 HEIC");
   }
@@ -121,12 +127,13 @@ async function registerAndUpload(kind: "vat" | "social_security", file: File, on
   }
   if (extraction) {
     await api(`/api/files/${meta.id}/extraction`, { method: "PUT", body: JSON.stringify(extraction) });
-    onState(extraction.parse_status === "failed" ? extraction.parse_note : "识别完成");
+    onState(extraction.parse_status === "success" ? "识别完成" : extraction.parse_note);
   }
 }
 
 function UploadPage({ me }: { me: Me }) {
   const [files, setFiles] = useState<LocalFile[]>([]);
+  const fileSeq = useRef(0);
   const [error, setError] = useState("");
   const [agreed, setAgreed] = useState(false);
   const [consent, setConsent] = useState("");
@@ -151,12 +158,14 @@ function UploadPage({ me }: { me: Me }) {
     if (!list?.length) return;
     setError("");
     for (const file of [...list]) {
-      setFiles((prev) => [...prev, { name: file.name, state: "排队" }]);
+      const id = ++fileSeq.current;
+      setFiles((prev) => [...prev, { id, name: file.name, state: "排队" }]);
+      const patch = (state: string) => setFiles((prev) => prev.map((item) => (item.id === id ? { ...item, state } : item)));
       try {
-        await registerAndUpload(kind, file, (state) => setFiles((prev) => prev.map((item) => (item.name === file.name ? { ...item, state } : item))));
+        await registerAndUpload(kind, file, patch);
       } catch (err) {
         const message = err instanceof Error ? err.message : "上传失败";
-        setFiles((prev) => prev.map((item) => (item.name === file.name ? { ...item, state: message } : item)));
+        patch(message);
         setError(message);
       }
     }
@@ -207,7 +216,7 @@ function UploadPage({ me }: { me: Me }) {
         <Card>
           <h2 className="font-semibold">识别进度</h2>
           <ul className="mt-2 space-y-1 text-sm" data-testid="file-progress">
-            {files.map((file) => <li key={file.name} className="flex justify-between gap-3"><span className="truncate">{file.name}</span><span>{file.state}</span></li>)}
+            {files.map((file) => <li key={file.id} className="flex justify-between gap-3"><span className="truncate">{file.name}</span><span>{file.state}</span></li>)}
           </ul>
         </Card>
       ) : null}
@@ -262,7 +271,7 @@ function ReportPage() {
                 </div>
                 <TierBadge tier={item.tier} />
               </div>
-              {item.verify_text ? <p className="mt-2 text-sm">待确认：{item.verify_text}</p> : null}
+              {item.verify_text ? <p className="mt-2 text-sm">{item.tier === "go" ? "待确认" : "需核实"}：{item.verify_text}</p> : null}
               {item.reason ? <p className="mt-2 text-sm text-muted">原因：{item.reason}</p> : null}
             </Card>
           ))}

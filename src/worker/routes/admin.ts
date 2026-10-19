@@ -10,7 +10,7 @@ import { audit, beijingDate, clientIp, contentDisposition, hitLimit, notifyWecom
 
 export const adminRoutes = new Hono<AppEnv>();
 
-adminRoutes.use("*", async (c, next) => {
+adminRoutes.use("/admin/*", async (c, next) => {
   if (!requireStaff(c.get("role"))) return c.json({ error: "需要顾问或管理员权限" }, 403);
   await next();
 });

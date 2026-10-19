@@ -30,7 +30,7 @@ llmRoutes.post("/llm/extract", async (c) => {
   const usage = await c.env.DB.prepare("SELECT count FROM llm_usage WHERE enterprise_id = ? AND day = ?").bind(enterpriseId, day).first<{ count: number }>();
   if ((usage?.count ?? 0) >= 80) return c.json({ error: "今天的识别次数已用完" }, 429);
   const len = Number(c.req.header("content-length") || 0);
-  if (!len || len > 4 * 1024 * 1024) return c.json({ error: "识别内容需标明长度且不超过 4MB" }, 413);
+  if (len > 4 * 1024 * 1024) return c.json({ error: "识别内容不超过 4MB" }, 413);
   const vision = task.endsWith("image");
   const fallback = c.req.query("fallback") === "1";
   const settingKey = vision ? (fallback ? "llm_vision_fallback" : "llm_vision_primary") : fallback ? "llm_text_fallback" : "llm_text_primary";
@@ -60,17 +60,32 @@ llmRoutes.post("/llm/extract", async (c) => {
     : `{"model":${JSON.stringify(provider.model)}${provider.cap_json_mode ? ',"response_format":{"type":"json_object"}' : ''},"messages":[{"role":"system","content":${JSON.stringify(prompt)}},{"role":"user","content":`;
   const suffix = vision ? `"}}]}]}` : `}]}`;
   if (!c.req.raw.body) return c.json({ error: "没有识别内容" }, 400);
-  const stream = concat(prefix, c.req.raw.body, suffix);
+  const stream = concat(prefix, limitBytes(c.req.raw.body, 4 * 1024 * 1024), suffix);
   const timeout = provider.timeout_ms || (vision ? 120_000 : 60_000);
-  const res = await fetch(joinUrl(provider.base_url, "/chat/completions"), {
-    method: "POST",
+  const init = {
+    method: "POST" as const,
     headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
     body: stream,
     signal: AbortSignal.timeout(timeout),
-  });
+    duplex: "half" as const,
+  };
+  const res = await fetch(joinUrl(provider.base_url, "/chat/completions"), init);
   console.log(JSON.stringify({ level: "info", msg: "llm_proxy", task, status: res.status, enterpriseId, ip: clientIp(c.req.raw) }));
   return new Response(res.body, { status: res.status, headers: { "content-type": res.headers.get("content-type") || "application/json", "cache-control": "no-store" } });
 });
+
+function limitBytes(body: ReadableStream<Uint8Array>, max: number): ReadableStream<Uint8Array> {
+  let seen = 0;
+  return body.pipeThrough(
+    new TransformStream({
+      transform(chunk, controller) {
+        seen += chunk.byteLength;
+        if (seen > max) throw new Error("识别内容超过 4MB");
+        controller.enqueue(chunk);
+      },
+    }),
+  );
+}
 
 function concat(prefix: string, body: ReadableStream<Uint8Array>, suffix: string): ReadableStream<Uint8Array> {
   const enc = new TextEncoder();

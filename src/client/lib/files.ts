@@ -24,7 +24,7 @@ export function parseSpreadsheet(file: File): Promise<Extraction> {
   });
 }
 
-export async function compressImage(file: Blob): Promise<Blob> {
+export async function compressImage(file: Blob, maxBytes = 3 * 1024 * 1024): Promise<Blob> {
   const bitmap = await createImageBitmap(file);
   const maxEdge = 3000;
   const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
@@ -39,7 +39,7 @@ export async function compressImage(file: Blob): Promise<Blob> {
   bitmap.close();
   let quality = 0.85;
   let blob = await toJpeg(canvas, quality);
-  while (blob.size > 3 * 1024 * 1024 && quality > 0.45) {
+  while (blob.size > maxBytes && quality > 0.45) {
     quality -= 0.1;
     blob = await toJpeg(canvas, quality);
   }

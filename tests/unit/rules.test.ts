@@ -19,29 +19,44 @@ const aihua: Profile = {
   dishonest: false,
 };
 
-const GO = ["APPRENTICE_SUBSIDY", "SKILL_EVAL_SUBSIDY", "GRAD_SS_SUBSIDY", "KEY_HIRE_TAX", "VET_HIRE_TAX", "DISABLED_LEVY", "DISABLED_WAGE_DEDUCT"];
+const GO = ["APPRENTICE_SUBSIDY", "SKILL_EVAL_SUBSIDY"];
+const VERIFY = ["GRAD_SS_SUBSIDY", "KEY_HIRE_TAX", "VET_HIRE_TAX", "DISABLED_LEVY", "DISABLED_WAGE_DEDUCT", "POVERTY_JOB_SUBSIDY", "INTERNSHIP_SUBSIDY"];
 
 function tierOf(profile: Profile, code: string, staff: StaffMap = {}) {
   return evaluate(profile, staff, rules).items.find((item) => item.code === code);
 }
 
 describe("爱华验收案例", () => {
-  it("顾问确认未失信后，指定项目为可推进，整体区间 0–10000", () => {
+  it("身份核实前：硬条件已满足的项目可推进，人员身份未知的项目需核实", () => {
     const result = evaluate(aihua, {}, rules);
-    for (const code of GO) {
-      expect(tierOf(aihua, code)?.tier, code).toBe("go");
+    for (const code of GO) expect(tierOf(aihua, code)?.tier, code).toBe("go");
+    for (const code of VERIFY) {
+      const item = tierOf(aihua, code);
+      expect(item?.tier, code).toBe("verify");
+      expect(item?.verify_text, code).toBeTruthy();
     }
     expect(result.estimate_low).toBe(0);
     expect(result.estimate_high).toBe(10_000);
-    expect(formatRange(result.estimate_low, result.estimate_high)).toBe("预计可享受政策优惠约 0 元–1 万元/年");
+    expect(formatRange(result.estimate_low, result.estimate_high)).toBe("最高约 1 万元/年");
     const grad = tierOf(aihua, "GRAD_SS_SUBSIDY");
     expect(grad?.estimate_low).toBe(0);
     expect(grad?.estimate_high).toBe(9600);
     expect(grad?.in_estimate).toBe(true);
     for (const item of result.items) {
       if (item.category.includes("资金补贴")) expect(item.in_estimate).toBe(false);
+      if (item.tier === "go") expect(item.verify_text).not.toMatch(/员工中是否有|残疾|高校毕业|脱贫|退役|见习/);
     }
     expect(DISCLAIMER).toContain("不构成任何承诺");
+  });
+
+  it("顾问录入高校毕业生人数后，该项升为可推进并抬高下限", () => {
+    const result = evaluate(aihua, { graduate: 4 }, rules);
+    const grad = result.items.find((item) => item.code === "GRAD_SS_SUBSIDY");
+    expect(grad?.tier).toBe("go");
+    expect(grad?.estimate_low).toBe(9600);
+    expect(result.estimate_low).toBe(9000);
+    expect(result.estimate_high).toBeGreaterThanOrEqual(10_000);
+    expect(result.items.find((item) => item.code === "VET_HIRE_TAX")?.tier).toBe("verify");
   });
 
   it("未确认失信时职业技能评价停在需核实", () => {

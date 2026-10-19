@@ -19,6 +19,8 @@ export function formatYuan(n: number): string {
 }
 
 export function formatRange(low: number, high: number): string {
+  if (low <= 0 && high > 0) return `最高约 ${formatYuan(high)}/年`;
+  if (low <= 0 && high <= 0) return "暂无可估算金额，顾问复核后给出区间";
   return `预计可享受政策优惠约 ${formatYuan(low)}–${formatYuan(high)}/年`;
 }
 
@@ -119,6 +121,24 @@ function isFund(rule: PolicyRule): boolean {
   return rule.category.includes("资金补贴") || rule.cap_tier === "verify" && rule.code.startsWith("FUND_HINT");
 }
 
+/** 社保/增值税表汇总推不出的人员身份。未知时不能显示成可推进。 */
+const IDENTITY_FIELDS = new Set(["internship_ready"]);
+const IDENTITY_RULES = new Set([
+  "KEY_HIRE_TAX",
+  "KEY_HIRE_TAX_BACK",
+  "VET_HIRE_TAX",
+  "VET_HIRE_TAX_BACK",
+  "DISABLED_LEVY",
+  "DISABLED_WAGE_DEDUCT",
+  "POVERTY_JOB_SUBSIDY",
+  "INTERNSHIP_SUBSIDY",
+  "GRAD_SS_SUBSIDY",
+]);
+
+function isIdentityField(field: string): boolean {
+  return field.startsWith("staff.") || IDENTITY_FIELDS.has(field);
+}
+
 function estimateOf(rule: PolicyRule, profile: Profile, staff: StaffMap): { low: number; high: number } | null {
   const est = rule.estimate;
   if (!est) return null;
@@ -204,6 +224,8 @@ export function evaluate(profile: Profile, staff: StaffMap, rules: PolicyRule[],
       }
     }
 
+    let identityUnknown = false;
+    let softUnknown = false;
     if (tier !== "reject" && soft.length) {
       const softResults = soft.map((cond) => ({ cond, result: evalCondition(cond, profile, staff, now) }));
       if (softResults.every((s) => s.result === "false")) {
@@ -211,14 +233,18 @@ export function evaluate(profile: Profile, staff: StaffMap, rules: PolicyRule[],
         reasons.push("待核实事项已确认不符合");
       } else {
         for (const s of softResults) {
-          if (s.result === "unknown") verify.push(s.cond.verify || s.cond.text);
+          if (s.result !== "unknown") continue;
+          softUnknown = true;
+          verify.push(s.cond.verify || s.cond.text);
+          if (isIdentityField(s.cond.field)) identityUnknown = true;
         }
       }
     }
+    if (tier === "go" && (identityUnknown || (IDENTITY_RULES.has(rule.code) && softUnknown))) tier = "verify";
 
     if ((rule.cap_tier === "verify" || isFund(rule)) && tier === "go") tier = "verify";
-    if ((regionUnknown || entityUnknown) && tier === "go") {
-      tier = "verify";
+    if ((regionUnknown || entityUnknown) && tier !== "reject") {
+      if (tier === "go") tier = "verify";
       verify.unshift("待确认企业所在地区或主体类型");
     }
 
@@ -237,8 +263,8 @@ export function evaluate(profile: Profile, staff: StaffMap, rules: PolicyRule[],
 
   const order: Record<Tier, number> = { go: 0, verify: 1, reject: 2 };
   items.sort((a, b) => order[a.tier] - order[b.tier]);
-  const sumLow = items.reduce((s, it) => s + (it.in_estimate ? it.estimate_low : 0), 0);
-  const sumHigh = items.reduce((s, it) => s + (it.in_estimate ? it.estimate_high : 0), 0);
+  const sumLow = items.reduce((s, it) => s + (it.tier === "go" && it.in_estimate ? it.estimate_low : 0), 0);
+  const sumHigh = items.reduce((s, it) => s + (it.tier !== "reject" && it.in_estimate ? it.estimate_high : 0), 0);
   const rounded = roundEstimate(sumLow, sumHigh);
   return {
     items,

@@ -33,11 +33,11 @@ export function AdminApp() {
   if (me.user.role === "enterprise") return <Navigate to="/app" replace />;
   if (me.user.must_change_password && location.pathname !== "/admin/change-password") return <Navigate to="/admin/change-password" replace />;
   return (
-    <div className="min-h-screen bg-bg">
-      <header className="sticky top-0 z-20 border-b border-line bg-white">
-        <div className="mx-auto flex h-14 max-w-7xl items-center gap-3 px-3">
+    <div className="flex h-dvh min-h-0 flex-col bg-bg">
+      <header className="z-30 shrink-0 border-b border-line bg-white" data-testid="admin-header">
+        <div className="mx-auto flex min-h-14 max-w-7xl items-center gap-3 px-3 py-2">
           <Link to="/admin" className="shrink-0 font-extrabold text-navy">企策AI 后台</Link>
-          <nav className="flex flex-1 gap-3 overflow-x-auto text-sm whitespace-nowrap">
+          <nav className="flex min-w-0 flex-1 gap-3 overflow-x-auto text-sm whitespace-nowrap">
             {links.map(([path, label]) => <Link key={path} to={`/admin${path === "/" ? "" : path}`}>{label}</Link>)}
           </nav>
           <span className="hidden text-xs text-muted sm:inline">{me.user.name}</span>
@@ -49,7 +49,8 @@ export function AdminApp() {
           >退出</button>
         </div>
       </header>
-      <main className="mx-auto max-w-7xl px-3 py-4">
+      <main className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-7xl px-3 py-4">
         <Routes>
           <Route index element={<Todos />} />
           <Route path="enterprises" element={<EnterpriseList />} />
@@ -68,6 +69,7 @@ export function AdminApp() {
           <Route path="settings" element={<Settings />} />
           <Route path="change-password" element={<ChangePasswordPage next="/admin" />} />
         </Routes>
+        </div>
       </main>
     </div>
   );
@@ -164,6 +166,16 @@ function EnterpriseDetail() {
     setMsg("已发布给企业");
     reload();
   }
+  async function saveRange(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    await api(`/api/admin/assessments/${data.draft.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ estimate_low: Number(form.get("low")), estimate_high: Number(form.get("high")) }),
+    });
+    setMsg("区间已保存，发布时按这个区间给企业看");
+    reload();
+  }
   async function ret(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const note = String(new FormData(e.currentTarget).get("note") || "");
@@ -207,6 +219,9 @@ function EnterpriseDetail() {
   }
   const profile = data.profile || {};
   const value = (field: string) => profile[field]?.value ?? "";
+  const override = data.draft?.estimate_override_json ? JSON.parse(data.draft.estimate_override_json) : null;
+  const shownLow = Number(override?.low ?? data.draft?.estimate_low ?? 0);
+  const shownHigh = Number(override?.high ?? data.draft?.estimate_high ?? 0);
   return (
     <div className="space-y-4" data-testid="admin-review">
       <Card>
@@ -263,12 +278,19 @@ function EnterpriseDetail() {
         </Card>
         <Card>
           <h2 className="font-semibold">方案初稿</h2>
-          {data.draft ? <p className="text-sm" data-testid="admin-estimate">系统区间 {formatRange(data.draft.estimate_low || 0, data.draft.estimate_high || 0)}</p> : <p className="text-sm text-muted">还没有初稿</p>}
-          <ul className="mt-2 space-y-2">
+          {data.draft ? <p className="text-sm" data-testid="admin-estimate">系统区间 {formatRange(shownLow, shownHigh)}</p> : <p className="text-sm text-muted">还没有初稿</p>}
+          {data.draft ? (
+            <form onSubmit={saveRange} className="mt-2 grid gap-2 sm:grid-cols-2" data-testid="range-form">
+              <Input name="low" type="number" min={0} defaultValue={shownLow} data-testid="range-low" aria-label="发布下限" />
+              <Input name="high" type="number" min={0} defaultValue={shownHigh} data-testid="range-high" aria-label="发布上限" />
+              <Button type="submit" variant="outline" className="sm:col-span-2" data-testid="save-range">按这个区间发布</Button>
+            </form>
+          ) : null}
+          <ul className="mt-2 max-h-80 space-y-2 overflow-y-auto">
             {(data.items || []).map((item: { id: string; name: string; tier: string; code?: string; verify_text?: string; basis?: string }) => (
               <li key={item.id} className="rounded-xl border border-line p-2 text-sm" data-testid={`tier-${item.code || item.name}`}>
                 <div className="flex items-center justify-between gap-2"><b>{item.name}</b><TierBadge tier={item.tier} /></div>
-                {item.verify_text ? <p className="text-muted">{item.verify_text}</p> : null}
+                {item.verify_text ? <p className="text-muted">{item.tier === "go" ? "待确认" : "需核实"}：{item.verify_text}</p> : null}
                 {ent.status === "已发布" ? <label className="mt-1 flex gap-2"><input type="checkbox" data-deal value={item.name} />纳入政策成交</label> : null}
               </li>
             ))}

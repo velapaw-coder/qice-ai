@@ -8,10 +8,11 @@ const SS = "fixtures/fake/爱华-社保清单-合成.xlsx";
 const SOLE_VAT = "fixtures/fake/个体户-增值税申报表-合成.xlsx";
 const SOLE_SS = "fixtures/fake/个体户-社保清单-合成.xlsx";
 const SHOTS = "/opt/cursor/artifacts/screenshots";
-const GO = ["APPRENTICE_SUBSIDY", "SKILL_EVAL_SUBSIDY", "GRAD_SS_SUBSIDY", "KEY_HIRE_TAX", "VET_HIRE_TAX", "DISABLED_LEVY", "DISABLED_WAGE_DEDUCT"];
+const GO = ["APPRENTICE_SUBSIDY", "SKILL_EVAL_SUBSIDY"];
+const VERIFY = ["GRAD_SS_SUBSIDY", "KEY_HIRE_TAX", "VET_HIRE_TAX", "DISABLED_LEVY", "DISABLED_WAGE_DEDUCT"];
 
-async function shot(page: Page, name: string) {
-  await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: true });
+async function shot(page: Page, name: string, fullPage = true) {
+  await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage });
 }
 
 async function login(page: Page, phone: string, password: string) {
@@ -86,6 +87,8 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
   const tempPassword = tempText.match(/临时密码：([^。\s]+)/)?.[1];
   expect(tempPassword).toBeTruthy();
 
+  const denied = await companyPage.request.get("/api/admin/todos");
+  expect(denied.status()).toBe(403);
   await companyPage.getByTestId("submit").click();
   await expect(companyPage.getByTestId("status-title")).toHaveText("待复核", { timeout: 30_000 });
   const before = await companyPage.request.get("/api/report");
@@ -117,14 +120,33 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
   for (const code of GO) {
     await expect(consultantPage.getByTestId(`tier-${code}`)).toContainText("可推进");
   }
-  await expect(consultantPage.getByTestId("admin-estimate")).toContainText("0 元–1 万元");
-  await shot(consultantPage, "admin-review");
+  for (const code of VERIFY) {
+    const card = consultantPage.getByTestId(`tier-${code}`);
+    await expect(card).toContainText("需核实");
+    await expect(card).not.toContainText("可推进");
+  }
+  await expect(consultantPage.getByTestId("admin-estimate")).toContainText("最高约 1 万元");
+  await expect(consultantPage.getByTestId("range-low")).toBeVisible();
+  await consultantPage.getByTestId("save-range").click();
+  await expect(consultantPage.getByText("区间已保存")).toBeVisible();
+  await consultantPage.locator("main").evaluate((node) => { node.scrollTop = 0; });
+  const header = await consultantPage.getByTestId("admin-header").boundingBox();
+  const review = await consultantPage.getByTestId("admin-review").boundingBox();
+  expect(header && review && header.y < 8 && review.y >= header.y + header.height - 1).toBeTruthy();
+  await shot(consultantPage, "admin-review", false);
+  await consultantPage.setViewportSize({ width: 390, height: 844 });
+  await consultantPage.locator("main").evaluate((node) => { node.scrollTop = 0; });
+  const mobileHeader = await consultantPage.getByTestId("admin-header").boundingBox();
+  const mobileReview = await consultantPage.getByTestId("admin-review").boundingBox();
+  expect(mobileHeader && mobileReview && mobileHeader.y < 8 && mobileReview.y >= mobileHeader.y + mobileHeader.height - 1).toBeTruthy();
+  await shot(consultantPage, "admin-review-mobile", false);
+  await consultantPage.setViewportSize({ width: 1280, height: 720 });
   await consultantPage.getByTestId("publish").click();
   await expect(consultantPage.getByText("已发布给企业")).toBeVisible();
   await expect(consultantPage.getByTestId("create-policy-deal")).toBeVisible();
 
   await companyPage.goto("/app/report");
-  await expect(companyPage.getByTestId("estimate")).toContainText("0 元–1 万元");
+  await expect(companyPage.getByTestId("estimate")).toContainText("最高约 1 万元");
   await expect(companyPage.getByTestId("disclaimer")).toHaveText(DISCLAIMER);
   const reportText = await companyPage.locator("body").innerText();
   for (const banned of ["服务费", "30%", "7800", "9000"]) expect(reportText).not.toContain(banned);
