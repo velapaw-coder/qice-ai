@@ -132,6 +132,7 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
     await expect(adminPage.getByTestId("admin-home")).toBeVisible();
     await adminPage.goto("/admin/policies");
     for (let pageGuard = 0; pageGuard < 6; pageGuard += 1) {
+      await expect(adminPage.getByTestId("policy-page")).toContainText(`第 ${pageGuard + 1} /`);
       for (let i = 0; i < 40; i++) {
         const button = adminPage.locator("[data-testid^='enable-']").first();
         if ((await button.count()) === 0) break;

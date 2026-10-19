@@ -87,6 +87,7 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
   await expect(adminPage.getByTestId("enable-APPRENTICE_SUBSIDY")).toBeVisible();
   const enabled: string[] = [];
   for (let guard = 0; guard < 6; guard += 1) {
+    await expect(adminPage.getByTestId("policy-page")).toContainText(`第 ${guard + 1} /`);
     const codes = await adminPage.locator("[data-testid^='enable-']").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-testid") || ""));
     if (guard === 0) expect(codes.length).toBeGreaterThan(7);
     for (const id of codes) {
