@@ -7,6 +7,7 @@ import { cityFromRegion, entityFromUscc, isValidUscc, regionFromUscc } from "../
 import { decryptSecret, encryptSecret } from "../crypto";
 import { enqueueCrawl, importTextDraft, joinUrl } from "../crawl";
 import { getEnterprise, loadEvalProfile, profileMap, runMatch, setStatus } from "../match";
+import { consentFailure, withUploadConsent } from "../consent";
 import { audit, beijingDate, clientIp, contentDisposition, hitLimit, notifyWecom, nowIso, readJson, requireStaff, setting, uid, type AppEnv } from "../util";
 
 export const adminRoutes = new Hono<AppEnv>();
@@ -243,21 +244,44 @@ adminRoutes.post("/admin/enterprises/:id/files", async (c) => {
   const ent = await getEnterprise(c.env.DB, c.req.param("id"));
   if (!ent) return c.json({ error: "企业不存在" }, 404);
   if (ent.status === "已撤回") return c.json({ error: "企业已撤回授权，不能代传" }, 409);
-  const agreed = await c.env.DB.prepare("SELECT revoked_at, consent_version FROM consents WHERE enterprise_id = ? ORDER BY agreed_at DESC LIMIT 1")
-    .bind(ent.id)
-    .first<{ revoked_at: string | null }>();
-  if (!agreed || agreed.revoked_at) return c.json({ error: "企业还没有有效授权" }, 409);
   const body = await readJson<{ kind?: string; source_type?: string; filename?: string; size?: number; mime?: string; parent_file_id?: string }>(c.req.raw);
   if (!body?.kind || !body.filename) return c.json({ error: "文件信息不完整" }, 400);
   const id = uid();
   const exp = new Date(Date.now() + 180 * 86400_000).toISOString();
-  await c.env.DB.prepare(
-    `INSERT INTO files (id, enterprise_id, kind, source_type, parent_file_id, uploaded_by, parse_status, r2_key, filename, mime, size, uploaded_at, expires_at)
-     VALUES (?, ?, ?, ?, ?, 'consultant', 'pending', ?, ?, ?, ?, ?, ?)`,
-  )
-    .bind(id, ent.id, body.kind, body.source_type || "excel", body.parent_file_id || null, `files/${crypto.randomUUID()}`, body.filename.slice(0, 180), body.mime || "", body.size || 0, nowIso(), exp)
-    .run();
-  await audit(c.env.DB, c.get("userId"), "file.upload_by_consultant", "file", id, clientIp(c.req.raw), { enterprise_id: ent.id });
+  const key = `files/${crypto.randomUUID()}`;
+  const filename = body.filename.slice(0, 180);
+  const kind = body.kind;
+  try {
+    await withUploadConsent(
+      c.env.DB,
+      "require",
+      {
+        enterpriseId: ent.id,
+        userId: c.get("userId"),
+        ip: clientIp(c.req.raw),
+        ua: c.req.header("user-agent") || "",
+      },
+      async () => {
+        await c.env.DB.prepare(
+          `INSERT INTO files (id, enterprise_id, kind, source_type, parent_file_id, uploaded_by, parse_status, r2_key, filename, mime, size, uploaded_at, expires_at)
+           VALUES (?, ?, ?, ?, ?, 'consultant', 'pending', ?, ?, ?, ?, ?, ?)`,
+        )
+          .bind(id, ent.id, kind, body.source_type || "excel", body.parent_file_id || null, key, filename, body.mime || "", body.size || 0, nowIso(), exp)
+          .run();
+        return id;
+      },
+      async (fileId) => {
+        await c.env.DB.prepare("DELETE FROM files WHERE id = ?").bind(fileId).run();
+      },
+      "企业还没有有效授权",
+      409,
+    );
+  } catch (err) {
+    const blocked = consentFailure(err);
+    if (blocked) return c.json({ error: blocked.error }, blocked.status);
+    throw err;
+  }
+  await audit(c.env.DB, c.get("userId"), "file.upload_by_consultant", "file", id, clientIp(c.req.raw), { enterprise_id: ent.id, on_behalf: true });
   return c.json({ id });
 });
 

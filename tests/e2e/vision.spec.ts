@@ -65,9 +65,7 @@ test("照片走视觉模型，未配置或失败时进入顾问复核", async ({
     await companyPage.getByTestId("password").fill("Photo1234");
     await companyPage.getByTestId("password2").fill("Photo1234");
     await companyPage.getByTestId("register-submit").click();
-    await companyPage.getByTestId("consent-main").check();
-    await companyPage.getByTestId("consent-cross").check();
-    await companyPage.getByRole("button", { name: "确认授权" }).click();
+    await expect(companyPage.getByTestId("upload-consent")).toHaveText("上传即表示同意《数据授权书》《隐私政策》（含资料存放于境外服务器）");
     await expect(companyPage.getByTestId("vat-file")).toBeEnabled();
     await companyPage.getByTestId("vat-file").setInputFiles("/tmp/qice-vision.png");
     await expect(companyPage.getByTestId("file-progress")).toContainText("未配置视觉模型");

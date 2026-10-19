@@ -20,12 +20,12 @@ body = body.replace(
 body = body.replace("确认服务范围与收费规则，协助办理申报。", "确认服务范围，协助办理申报。");
 body = body.replace(
   "先填写基本信息，工作人员确认授权与安全提交方式后，再提供敏感资料。",
-  "注册后在线勾选数据授权书，通过安全通道上传。",
+  "注册后直接上传资料，上传即表示同意数据授权书和隐私政策。",
 );
-body = body.replace("请通过授权安全渠道提交。", "注册后在线勾选数据授权书，通过安全通道上传。");
+body = body.replace("请通过授权安全渠道提交。", "注册后直接上传资料，上传即表示同意数据授权书和隐私政策。");
 body = body.replace(
   "通常先准备最近一年的增值税申报表和企业最新社保清单；提交敏感文件前需要确认授权、安全传输与使用范围。",
-  "通常先准备最近一年的增值税申报表和企业最新社保清单。注册后在线勾选数据授权书，通过安全通道上传。",
+  "通常先准备最近一年的增值税申报表和企业最新社保清单。上传即表示同意数据授权书和隐私政策。",
 );
 body = body.replace("提交企业基本信息，申请专业团队初步评估。", "注册并上传两份资料，获取初步方案。");
 const example = `<div class="example" aria-label="三步协同"><small style="color:#7c8ba5">三步协同</small><h3 style="margin:8px 0 18px">从发现政策到落地升级</h3><div class="step-line"><span class="n">1</span><div><b>发现可享受的政策</b><span>系统匹配税收、社保和就业支持，顾问复核后再给企业看。</span></div></div><div class="step-line"><span class="n">2</span><div><b>协助申报落地</b><span>确认服务范围后，协助准备材料并跟踪办理。</span></div></div><div class="step-line"><span class="n">3</span><div><b>按需规划 AI 升级</b><span>政策服务和 AI FDE 分开选择，企业按经营需要决定。</span></div></div></div>`;

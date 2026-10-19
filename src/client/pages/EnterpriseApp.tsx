@@ -131,29 +131,19 @@ async function registerAndUpload(kind: "vat" | "social_security", file: File, on
   }
 }
 
+function UploadConsentLine({ marked = false }: { marked?: boolean }) {
+  return (
+    <p className="text-xs leading-5 text-muted" data-testid={marked ? "upload-consent" : undefined}>
+      上传即表示同意<Link className="text-brand" to="/legal/consent" target="_blank" rel="noreferrer" data-testid={marked ? "link-consent" : undefined}>《数据授权书》</Link><Link className="text-brand" to="/legal/privacy" target="_blank" rel="noreferrer" data-testid={marked ? "link-privacy" : undefined}>《隐私政策》</Link>（含资料存放于境外服务器）
+    </p>
+  );
+}
+
 function UploadPage({ me }: { me: Me }) {
   const [files, setFiles] = useState<LocalFile[]>([]);
   const fileSeq = useRef(0);
   const [error, setError] = useState("");
-  const [agreed, setAgreed] = useState(false);
-  const [consent, setConsent] = useState("");
-  const [checks, setChecks] = useState({ main: false, cross: false });
   const navigate = useNavigate();
-  useEffect(() => {
-    api<{ template: { content_md: string } | null; active: boolean }>("/api/consent/current")
-      .then((row) => {
-        setConsent(row.template?.content_md || "");
-        setAgreed(row.active);
-      })
-      .catch((err) => setError(err.message));
-  }, []);
-  async function agree(e: FormEvent) {
-    e.preventDefault();
-    if (!checks.main || !checks.cross) return setError("请分别勾选两项授权");
-    await api("/api/consent", { method: "POST", body: JSON.stringify({ main_agreed: true, cross_border_agreed: true }) });
-    setAgreed(true);
-    setError("");
-  }
   async function onPick(kind: "vat" | "social_security", list: FileList | null) {
     if (!list?.length) return;
     setError("");
@@ -191,26 +181,17 @@ function UploadPage({ me }: { me: Me }) {
           <Button type="button" variant="outline" className="mt-2" onClick={() => navigator.clipboard.writeText(link)}>复制上传链接</Button>
         </div>
       </Card>
-      {!agreed ? (
-        <Card>
-          <h2 className="font-semibold">数据授权</h2>
-          <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap text-xs leading-6 text-muted">{consent || "正在读取授权书…"}</pre>
-          <form onSubmit={agree} className="mt-3 space-y-2 text-sm" data-testid="consent-form">
-            <label className="flex gap-2"><input type="checkbox" checked={checks.main} onChange={(e) => setChecks({ ...checks, main: e.target.checked })} data-testid="consent-main" />我已阅读并同意《数据处理授权书》，并确认我方已就所提供的员工个人信息取得合法授权或具备合法处理依据。</label>
-            <label className="flex gap-2"><input type="checkbox" checked={checks.cross} onChange={(e) => setChecks({ ...checks, cross: e.target.checked })} data-testid="consent-cross" />我知悉并单独同意：试点期间资料将存储并处理在中华人民共和国境外的 Cloudflare 服务器上。</label>
-            <Button type="submit">确认授权</Button>
-          </form>
-        </Card>
-      ) : null}
       <Card>
         <h2 className="font-semibold">最近一年增值税申报表</h2>
         <p className="text-sm text-muted">可多选，月报或季报都可以，最多 30 个文件。</p>
-        <Input className="mt-2" type="file" multiple accept=".xlsx,.xls,.csv,.pdf,.jpg,.jpeg,.png,.heic" disabled={!agreed} data-testid="vat-file" onChange={(e) => onPick("vat", e.target.files)} />
+        <Input className="mt-2" type="file" multiple accept=".xlsx,.xls,.csv,.pdf,.jpg,.jpeg,.png,.heic" data-testid="vat-file" onChange={(e) => onPick("vat", e.target.files)} />
+        <div className="mt-2"><UploadConsentLine marked /></div>
       </Card>
       <Card>
         <h2 className="font-semibold">最新一个月社保清单</h2>
         <p className="text-sm text-muted">最多 10 个文件，照片可以一页一张。</p>
-        <Input className="mt-2" type="file" multiple accept=".xlsx,.xls,.csv,.pdf,.jpg,.jpeg,.png,.heic" disabled={!agreed} data-testid="ss-file" onChange={(e) => onPick("social_security", e.target.files)} />
+        <Input className="mt-2" type="file" multiple accept=".xlsx,.xls,.csv,.pdf,.jpg,.jpeg,.png,.heic" data-testid="ss-file" onChange={(e) => onPick("social_security", e.target.files)} />
+        <div className="mt-2"><UploadConsentLine /></div>
       </Card>
       {files.length ? (
         <Card>
@@ -222,9 +203,9 @@ function UploadPage({ me }: { me: Me }) {
       ) : null}
       {error ? <Banner tone="error">{error}</Banner> : null}
       {me.enterprise?.status_note && me.enterprise.status === "需补传" ? <Banner tone="warn">{me.enterprise.status_note}</Banner> : null}
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <Button disabled={!agreed} data-testid="submit" onClick={() => submit(false)}>提交资料</Button>
-        <Button variant="outline" disabled={!agreed} data-testid="manual-submit" onClick={() => submit(true)}>交给顾问处理</Button>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <Button data-testid="submit" onClick={() => submit(false)}>提交资料</Button>
+        <Button variant="outline" data-testid="manual-submit" onClick={() => submit(true)}>交给顾问处理</Button>
       </div>
     </div>
   );
@@ -308,7 +289,7 @@ function SettingsPage() {
   const [message, setMessage] = useState("");
   async function revoke() {
     await api("/api/privacy/revoke", { method: "POST", body: "{}" });
-    setMessage("授权已撤回，资料将在 7 天内删除。重新授权后可以继续上传。");
+    setMessage("授权已撤回，资料将在 7 天内删除。");
   }
   async function remove() {
     await api("/api/privacy/delete-request", { method: "POST", body: "{}" });
