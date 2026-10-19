@@ -13,6 +13,8 @@ export interface Env {
   PEPPER: string;
   SETTINGS_ENC_KEY: string;
   DEEPSEEK_API_KEY?: string;
+  /** 本地验收可在 .dev.vars 里调高。生产不设置时按每小时 5 次。 */
+  REGISTER_HOURLY_LIMIT?: string;
 }
 
 export type Vars = {
@@ -108,6 +110,15 @@ export async function loadSession(db: D1Database, request: Request): Promise<{
     )
     .bind(hash, nowIso())
     .first();
+}
+
+/** 生产默认每 IP 每小时 5 次。只有本地 .dev.vars 显式调高时才会放开。 */
+export function registerHourlyLimit(env: Env): number {
+  const raw = env.REGISTER_HOURLY_LIMIT?.trim();
+  if (!raw) return 5;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1 || n > 100) return 5;
+  return n;
 }
 
 export async function hitLimit(env: Env, key: string, limit: number, windowSec: number, useBinding = false): Promise<boolean> {

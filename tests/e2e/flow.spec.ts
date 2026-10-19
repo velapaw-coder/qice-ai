@@ -52,12 +52,19 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
   await companyPage.getByTestId("password2").fill("Aihua1234");
   await companyPage.getByTestId("register-submit").click();
   await expect(companyPage.getByTestId("upload-page")).toBeVisible();
-  await companyPage.getByTestId("consent-main").check();
-  await companyPage.getByTestId("consent-cross").check();
-  await companyPage.getByRole("button", { name: "确认授权" }).click();
+  await expect(companyPage.getByTestId("consent-form")).toHaveCount(0);
+  await expect(companyPage.getByTestId("upload-consent")).toHaveText("上传即表示同意《数据授权书》《隐私政策》（含资料存放于境外服务器）");
+  await expect(companyPage.getByTestId("link-consent")).toHaveAttribute("href", "/legal/consent");
+  await expect(companyPage.getByTestId("link-privacy")).toHaveAttribute("href", "/legal/privacy");
+  const beforeConsent = await (await companyPage.request.get("/api/consent/current")).json();
+  expect(beforeConsent.active).toBe(false);
   await expect(companyPage.getByTestId("vat-file")).toBeEnabled();
   await companyPage.getByTestId("vat-file").setInputFiles(VAT);
   await expect(companyPage.getByTestId("file-progress")).toContainText("识别完成");
+  const afterConsent = await (await companyPage.request.get("/api/consent/current")).json();
+  expect(afterConsent.active).toBe(true);
+  expect(afterConsent.agreed.consent_version).toBe("v1");
+  expect(afterConsent.agreed.agreed_at).toBeTruthy();
   await companyPage.getByTestId("ss-file").setInputFiles(SS);
   await expect(companyPage.locator("[data-testid='file-progress'] li")).toHaveCount(2);
   await expect(companyPage.locator("[data-testid='file-progress'] li").nth(1)).toContainText("识别完成");
@@ -66,6 +73,16 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
   await adminPage.goto("/login");
   await login(adminPage, "13800000000", "Admin1234");
   await expect(adminPage.getByTestId("admin-home")).toBeVisible();
+  await shot(adminPage, "admin-todos");
+  const auditRes = await adminPage.request.get("/api/admin/audit");
+  const auditJson = (await auditRes.json()) as { logs: { action: string; actor_id: string | null; ip: string | null; meta_json: string | null }[] };
+  const agreed = auditJson.logs.find((log) => log.action === "consent.agree");
+  expect(agreed?.actor_id).toBeTruthy();
+  expect(agreed?.ip).toBeTruthy();
+  const agreeMeta = JSON.parse(agreed?.meta_json || "{}") as { version?: string; user_id?: string; privacy_version?: string };
+  expect(agreeMeta.version).toBe("v1");
+  expect(agreeMeta.privacy_version).toBe("privacy-v1");
+  expect(agreeMeta.user_id).toBe(agreed?.actor_id);
   await adminPage.goto("/admin/policies");
   await expect(adminPage.getByTestId("enable-APPRENTICE_SUBSIDY")).toBeVisible();
   const codes = await adminPage.locator("[data-testid^='enable-']").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-testid") || ""));
@@ -139,6 +156,11 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
   const mobileReview = await consultantPage.getByTestId("admin-review").boundingBox();
   expect(mobileHeader && mobileReview && mobileHeader.y < 8 && mobileReview.y >= mobileHeader.y + mobileHeader.height - 1).toBeTruthy();
   await shot(consultantPage, "admin-review-mobile", false);
+  await consultantPage.getByTestId("admin-menu").click();
+  await expect(consultantPage.getByTestId("admin-drawer")).toBeVisible();
+  await expect(consultantPage.getByRole("link", { name: "待办" })).toBeVisible();
+  await shot(consultantPage, "admin-drawer", false);
+  await consultantPage.getByTestId("admin-menu-close").click();
   await consultantPage.setViewportSize({ width: 1280, height: 720 });
   await consultantPage.getByTestId("publish").click();
   await expect(consultantPage.getByText("已发布给企业")).toBeVisible();
@@ -152,6 +174,9 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
   const reportText = await companyPage.locator("body").innerText();
   for (const banned of ["服务费", "30%", "7800", "9000", "9600", "最高约"]) expect(reportText).not.toContain(banned);
   await shot(companyPage, "enterprise-report");
+  await companyPage.setViewportSize({ width: 390, height: 844 });
+  await shot(companyPage, "enterprise-mobile", false);
+  await companyPage.setViewportSize({ width: 1280, height: 720 });
   await companyPage.getByTestId("slot").selectOption("工作日上午");
   await companyPage.getByTestId("topic").selectOption("both");
   await companyPage.getByTestId("book").click();
@@ -167,7 +192,7 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
   await consultantPage.getByTestId("realize-amount").fill("5000");
   await consultantPage.getByTestId("realize-date").fill("2026-10-01");
   await consultantPage.getByTestId("realize").click();
-  await expect(consultantPage.getByText("已兑现")).toBeVisible();
+  await expect(consultantPage.getByTestId("deal-stage-label")).toContainText("已兑现");
 
   const download = await Promise.all([
     consultantPage.waitForEvent("download"),
@@ -193,9 +218,7 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
   await solePage.getByTestId("password").fill("Sole12345");
   await solePage.getByTestId("password2").fill("Sole12345");
   await solePage.getByTestId("register-submit").click();
-  await solePage.getByTestId("consent-main").check();
-  await solePage.getByTestId("consent-cross").check();
-  await solePage.getByRole("button", { name: "确认授权" }).click();
+  await expect(solePage.getByTestId("upload-consent")).toBeVisible();
   await expect(solePage.getByTestId("vat-file")).toBeEnabled();
   await solePage.getByTestId("vat-file").setInputFiles(SOLE_VAT);
   await expect(solePage.locator("[data-testid='file-progress'] li")).toHaveCount(1);

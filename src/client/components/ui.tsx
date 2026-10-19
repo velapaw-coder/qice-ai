@@ -4,15 +4,15 @@ import { cn } from "../lib/cn";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, TextareaHTMLAttributes } from "react";
 
 const buttonStyles = cva(
-  "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50",
+  "inline-flex items-center justify-center gap-2 rounded-[11px] px-4 py-2.5 text-sm font-bold transition duration-200 hover:-translate-y-0.5 disabled:translate-y-0 disabled:cursor-not-allowed disabled:shadow-none",
   {
     variants: {
       variant: {
-        primary: "bg-brand text-white shadow-[0_8px_22px_#3169f533] hover:bg-[#2057df]",
-        light: "bg-white text-[#1e4fc8]",
-        ghost: "bg-transparent text-ink hover:bg-bg",
-        danger: "bg-white text-red-600 border border-red-200",
-        outline: "border border-line bg-white text-ink hover:bg-bg",
+        primary: "bg-brand text-white shadow-[0_8px_22px_#3169f533] hover:bg-[#2057df] hover:text-white disabled:bg-[#d9e4fb] disabled:text-[#1e3a6d] disabled:hover:bg-[#d9e4fb] disabled:hover:text-[#1e3a6d]",
+        light: "bg-white text-navy shadow-none hover:bg-[#f3f7ff] hover:text-navy disabled:bg-[#f3f6fb] disabled:text-[#3e4e68] disabled:hover:bg-[#f3f6fb] disabled:hover:text-[#3e4e68]",
+        ghost: "bg-transparent text-ink shadow-none hover:bg-[#edf3ff] hover:text-ink disabled:text-[#3e4e68] disabled:hover:bg-transparent disabled:hover:text-[#3e4e68]",
+        danger: "border border-red-200 bg-white text-[#7f1d1d] shadow-none hover:bg-red-50 hover:text-[#7f1d1d] disabled:bg-white disabled:text-[#7f1d1d] disabled:hover:bg-white disabled:hover:text-[#7f1d1d]",
+        outline: "border border-line bg-white text-ink shadow-none hover:border-[#1e4fc8] hover:text-[#1e4fc8] disabled:bg-white disabled:text-[#3e4e68] disabled:hover:bg-white disabled:hover:text-[#3e4e68]",
       },
     },
     defaultVariants: { variant: "primary" },
@@ -24,12 +24,14 @@ export function Button({ className, variant, asChild, ...props }: ButtonHTMLAttr
   return <Comp className={cn(buttonStyles({ variant }), className)} {...props} />;
 }
 
+export const fieldClass = "w-full rounded-[11px] border border-[#d8e1ef] bg-white px-3 py-2.5 text-sm text-ink outline-none placeholder:text-[#526987] focus:border-brand focus:ring-2 focus:ring-[#a8c1ff] disabled:bg-[#f3f6fb] disabled:text-[#3e4e68]";
+
 export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} className={cn("w-full rounded-xl border border-line bg-white px-3 py-2.5 text-sm outline-none focus:border-brand", props.className)} />;
+  return <input {...props} className={cn(fieldClass, props.className)} />;
 }
 
 export function Textarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea {...props} className={cn("w-full rounded-xl border border-line bg-white px-3 py-2.5 text-sm outline-none focus:border-brand", props.className)} />;
+  return <textarea {...props} className={cn(fieldClass, "min-h-24", props.className)} />;
 }
 
 export function Label({ children, hint }: { children: string; hint?: string }) {
@@ -42,18 +44,58 @@ export function Label({ children, hint }: { children: string; hint?: string }) {
 }
 
 export function Card({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <section className={cn("rounded-2xl border border-line bg-white p-4 shadow-[0_10px_32px_#1d46800a] md:p-5", className)}>{children}</section>;
+  return <section className={cn("rounded-[18px] border border-line bg-white p-4 shadow-[0_10px_32px_#1d46800a] md:p-5", className)}>{children}</section>;
+}
+
+export function PageHeader({ kicker, title, description }: { kicker?: string; title: string; description?: string }) {
+  return (
+    <header className="mb-4">
+      {kicker ? <p className="text-[13px] font-extrabold tracking-[0.18em] text-[#1e4fc8]">{kicker}</p> : null}
+      <h1 className="mt-1 text-[26px] font-extrabold tracking-tight text-navy">{title}</h1>
+      {description ? <p className="mt-1 max-w-2xl text-sm leading-6 text-muted">{description}</p> : null}
+    </header>
+  );
+}
+
+export function StatCard({ label, value, active, onClick }: { label: string; value: number | string; active?: boolean; onClick?: () => void }) {
+  const className = cn(
+    "rounded-[18px] border bg-white p-4 text-left shadow-[0_10px_32px_#1d46800a] transition",
+    active ? "border-brand ring-2 ring-[#3169f533]" : "border-line hover:border-[#b9ccf5]",
+  );
+  const body = (
+    <>
+      <p className="text-xs font-semibold text-muted">{label}</p>
+      <p className="mt-1 text-3xl font-extrabold tracking-tight text-[#255de4]">{value}</p>
+    </>
+  );
+  if (onClick) return <button type="button" onClick={onClick} className={className}>{body}</button>;
+  return <div className={className}>{body}</div>;
+}
+
+export function EmptyState({ title, children }: { title: string; children?: React.ReactNode }) {
+  return (
+    <div className="rounded-[16px] border border-dashed border-[#d0dcf6] bg-[#f7f9ff] px-4 py-10 text-center">
+      <p className="font-semibold text-navy">{title}</p>
+      {children ? <p className="mt-1 text-sm text-muted">{children}</p> : null}
+    </div>
+  );
+}
+
+export function BrandMark({ light = false }: { light?: boolean }) {
+  return (
+    <span className={cn("grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-brand to-[#0f6f86] text-lg font-bold text-white shadow-[0_8px_18px_#3169f540]", light && "ring-1 ring-white/40")}>✦</span>
+  );
 }
 
 const tierStyle: Record<string, string> = {
-  go: "bg-emerald-50 text-emerald-700",
-  verify: "bg-amber-50 text-amber-800",
-  reject: "bg-slate-100 text-slate-600",
+  go: "bg-[#e5f8f5] text-[#0d6a56]",
+  verify: "bg-[#fff4df] text-[#6a3d00]",
+  reject: "bg-[#f1f5fd] text-[#3e4e68]",
 };
 const tierLabel: Record<string, string> = { go: "可推进", verify: "需核实", reject: "不建议" };
 
 export function TierBadge({ tier }: { tier: string }) {
-  return <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", tierStyle[tier] || tierStyle.verify)}>{tierLabel[tier] || tier}</span>;
+  return <span className={cn("inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold", tierStyle[tier] || tierStyle.verify)}>{tierLabel[tier] || tier}</span>;
 }
 
 export function Banner({ tone = "info", children }: { tone?: "info" | "error" | "warn"; children: React.ReactNode }) {

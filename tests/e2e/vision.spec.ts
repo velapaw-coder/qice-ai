@@ -58,6 +58,14 @@ test("照片走视觉模型，未配置或失败时进入顾问复核", async ({
   const adminPage = await admin.newPage();
   const companyPage = await company.newPage();
   try {
+    await login(adminPage, "13800000000", "Admin1234");
+    await expect(adminPage.getByTestId("admin-home")).toBeVisible();
+    const cleared = await adminPage.request.put("/api/admin/settings", {
+      headers: { "x-qice-request": "1", "content-type": "application/json" },
+      data: { settings: { llm_text_primary: "", llm_text_fallback: "", llm_vision_primary: "", llm_vision_fallback: "" } },
+    });
+    expect(cleared.ok()).toBeTruthy();
+
     await companyPage.goto("/register");
     await companyPage.getByTestId("company").fill("合成视觉企业");
     await companyPage.getByTestId("contact").fill("合成联系人");
@@ -65,16 +73,19 @@ test("照片走视觉模型，未配置或失败时进入顾问复核", async ({
     await companyPage.getByTestId("password").fill("Photo1234");
     await companyPage.getByTestId("password2").fill("Photo1234");
     await companyPage.getByTestId("register-submit").click();
-    await companyPage.getByTestId("consent-main").check();
-    await companyPage.getByTestId("consent-cross").check();
-    await companyPage.getByRole("button", { name: "确认授权" }).click();
+    const blocked = companyPage.getByText("这个网络注册太频繁");
+    const ready = companyPage.getByTestId("upload-consent");
+    await expect(blocked.or(ready)).toBeVisible();
+    if (await blocked.isVisible()) {
+      await companyPage.waitForTimeout(61_000);
+      await companyPage.getByTestId("register-submit").click();
+    }
+    await expect(ready).toHaveText("上传即表示同意《数据授权书》《隐私政策》（含资料存放于境外服务器）");
     await expect(companyPage.getByTestId("vat-file")).toBeEnabled();
     await companyPage.getByTestId("vat-file").setInputFiles("/tmp/qice-vision.png");
     await expect(companyPage.getByTestId("file-progress")).toContainText("未配置视觉模型");
     expect(hits).toHaveLength(0);
 
-    await login(adminPage, "13800000000", "Admin1234");
-    await expect(adminPage.getByTestId("admin-home")).toBeVisible();
     const created = await adminPage.request.post("/api/admin/ai-providers", {
       headers: { "x-qice-request": "1", "content-type": "application/json" },
       data: {

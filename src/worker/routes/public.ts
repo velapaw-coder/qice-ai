@@ -7,6 +7,7 @@ import {
   cookie,
   currentConsent,
   hitLimit,
+  registerHourlyLimit,
   nowIso,
   readJson,
   sessionToken,
@@ -54,7 +55,7 @@ publicRoutes.post("/auth/register", async (c) => {
   if (phoneMsg) return c.json({ error: phoneMsg }, 400);
   if (!/^[0-9a-f]{64}$/.test(clientKey)) return c.json({ error: "密码格式不正确，请更换浏览器后重试" }, 400);
   const ip = clientIp(c.req.raw);
-  const allowed = await hitLimit(c.env, `register:${ip}`, 5, 3600, true);
+  const allowed = await hitLimit(c.env, `register:${ip}`, registerHourlyLimit(c.env), 3600, true);
   if (!allowed) return c.json({ error: "这个网络注册太频繁，请一小时后再试" }, 429);
   const exists = await c.env.DB.prepare("SELECT id FROM users WHERE phone = ?").bind(phone).first();
   if (exists) return c.json({ error: "这个手机号已经注册" }, 409);

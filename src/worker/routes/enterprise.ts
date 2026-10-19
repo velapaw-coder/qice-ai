@@ -4,6 +4,7 @@ import { DISCLAIMER } from "../../shared/rules/evaluate";
 import { extractionLooksUnsafe } from "../../shared/profile";
 import { isValidUscc } from "../../shared/uscc";
 import { applyExtraction, fileExtractions, getEnterprise, runMatch, setStatus } from "../match";
+import { consentFailure, withUploadConsent } from "../consent";
 import { audit, clientIp, currentConsent, notifyWecom, nowIso, readJson, requireStaff, uid, type AppEnv } from "../util";
 
 export const enterpriseRoutes = new Hono<AppEnv>();
@@ -52,37 +53,8 @@ enterpriseRoutes.get("/consent/current", async (c) => {
   return c.json({ template: tpl, active, agreed });
 });
 
-enterpriseRoutes.post("/consent", async (c) => {
-  if (c.get("role") !== "enterprise") return c.json({ error: "只有企业账号可以授权" }, 403);
-  const body = await readJson<{ main_agreed?: boolean; cross_border_agreed?: boolean }>(c.req.raw);
-  if (!body?.main_agreed || !body.cross_border_agreed) return c.json({ error: "请分别勾选两项授权" }, 400);
-  const tpl = await currentConsent(c.env.DB);
-  if (!tpl) return c.json({ error: "授权书模板缺失" }, 500);
-  const entId = c.get("enterpriseId")!;
-  await c.env.DB.prepare(
-    "INSERT INTO consents (id, enterprise_id, consent_version, main_agreed, cross_border_agreed, ip, ua, agreed_at) VALUES (?, ?, ?, 1, 1, ?, ?, ?)",
-  )
-    .bind(uid(), entId, tpl.version, clientIp(c.req.raw), (c.req.header("user-agent") || "").slice(0, 300), nowIso())
-    .run();
-  const ent = await getEnterprise(c.env.DB, entId);
-  if (ent?.status === "已撤回") await setStatus(c.env.DB, entId, "待上传", null);
-  await audit(c.env.DB, c.get("userId"), "consent.agree", "enterprise", entId, clientIp(c.req.raw), { version: tpl.version });
-  return c.json({ ok: true, version: tpl.version });
-});
-
-async function consentOk(c: { env: AppEnv["Bindings"]; get: (k: "enterpriseId") => string | null }): Promise<boolean> {
-  const tpl = await currentConsent(c.env.DB);
-  const agreed = await c.env.DB.prepare(
-    "SELECT consent_version, revoked_at FROM consents WHERE enterprise_id = ? ORDER BY agreed_at DESC LIMIT 1",
-  )
-    .bind(c.get("enterpriseId"))
-    .first<{ consent_version: string; revoked_at: string | null }>();
-  return Boolean(tpl && agreed && !agreed.revoked_at && agreed.consent_version === tpl.version);
-}
-
 enterpriseRoutes.post("/files", async (c) => {
   if (c.get("role") !== "enterprise") return c.json({ error: "请使用企业账号上传" }, 403);
-  if (!(await consentOk(c))) return c.json({ error: "请先勾选最新版授权书" }, 403);
   const ent = await getEnterprise(c.env.DB, c.get("enterpriseId")!);
   if (!ent || !["待上传", "识别中", "需补传"].includes(ent.status)) return c.json({ error: "当前状态不能上传" }, 409);
   const body = await readJson<{
@@ -108,14 +80,40 @@ enterpriseRoutes.post("/files", async (c) => {
   const id = uid();
   const key = `files/${crypto.randomUUID()}`;
   const exp = new Date(Date.now() + 180 * 86400_000).toISOString();
-  await c.env.DB.prepare(
-    `INSERT INTO files (id, enterprise_id, kind, source_type, parent_file_id, uploaded_by, parse_status, r2_key, filename, mime, size, sha256, uploaded_at, expires_at)
-     VALUES (?, ?, ?, ?, ?, 'enterprise', 'pending', ?, ?, ?, ?, ?, ?, ?)`,
-  )
-    .bind(id, ent.id, body.kind, body.source_type, body.parent_file_id || null, key, body.filename.slice(0, 180), body.mime || "", size, body.sha256 || null, nowIso(), exp)
-    .run();
+  const uploadedAt = nowIso();
+  const filename = body.filename.slice(0, 180);
+  const sourceType = body.source_type;
+  const kind = body.kind;
+  try {
+    await withUploadConsent(
+      c.env.DB,
+      "record",
+      {
+        enterpriseId: ent.id,
+        userId: c.get("userId"),
+        ip: clientIp(c.req.raw),
+        ua: c.req.header("user-agent") || "",
+      },
+      async () => {
+        await c.env.DB.prepare(
+          `INSERT INTO files (id, enterprise_id, kind, source_type, parent_file_id, uploaded_by, parse_status, r2_key, filename, mime, size, sha256, uploaded_at, expires_at)
+           VALUES (?, ?, ?, ?, ?, 'enterprise', 'pending', ?, ?, ?, ?, ?, ?, ?)`,
+        )
+          .bind(id, ent.id, kind, sourceType, body.parent_file_id || null, key, filename, body.mime || "", size, body.sha256 || null, uploadedAt, exp)
+          .run();
+        return id;
+      },
+      async (fileId) => {
+        await c.env.DB.prepare("DELETE FROM files WHERE id = ?").bind(fileId).run();
+      },
+    );
+  } catch (err) {
+    const blocked = consentFailure(err);
+    if (blocked) return c.json({ error: blocked.error }, blocked.status);
+    throw err;
+  }
   if (ent.status === "待上传") await setStatus(c.env.DB, ent.id, "识别中", null);
-  await audit(c.env.DB, c.get("userId"), "file.register", "file", id, clientIp(c.req.raw), { kind: body.kind });
+  await audit(c.env.DB, c.get("userId"), "file.register", "file", id, clientIp(c.req.raw), { kind });
   return c.json({ id, r2_key: key });
 });
 
@@ -134,7 +132,29 @@ enterpriseRoutes.put("/files/:id/content", async (c) => {
   if (!len || len > 10 * 1024 * 1024) return c.json({ error: "请标明文件大小，且不超过 10MB" }, 413);
   const body = c.req.raw.body;
   if (!body) return c.json({ error: "没有文件内容" }, 400);
-  await c.env.BUCKET.put(file.r2_key, body, { httpMetadata: { contentType: file.mime || "application/octet-stream" } });
+  try {
+    await withUploadConsent(
+      c.env.DB,
+      "require",
+      {
+        enterpriseId: file.enterprise_id,
+        userId: c.get("userId"),
+        ip: clientIp(c.req.raw),
+        ua: c.req.header("user-agent") || "",
+      },
+      async () => {
+        await c.env.BUCKET.put(file.r2_key, body, { httpMetadata: { contentType: file.mime || "application/octet-stream" } });
+        return file.r2_key;
+      },
+      async (r2Key) => {
+        await c.env.BUCKET.delete(r2Key);
+      },
+    );
+  } catch (err) {
+    const blocked = consentFailure(err);
+    if (blocked) return c.json({ error: blocked.error }, blocked.status);
+    throw err;
+  }
   await c.env.DB.prepare("UPDATE files SET size = ? WHERE id = ?").bind(len, file.id).run();
   return c.json({ ok: true });
 });
