@@ -29,7 +29,7 @@ const sources = [
   ["国家", "国家税务总局政策法规库", "CN", "https://fgk.chinatax.gov.cn/", "https://fgk.chinatax.gov.cn/"],
   ["国家", "人社部政策法规", "CN", "https://www.mohrss.gov.cn/xxgk2020/fdzdgknr/zcfg/", "https://www.mohrss.gov.cn/"],
   ["省", "广东省政府文件", "44", "https://www.gd.gov.cn/zwgk/wjk/qbwj/index.html", "https://www.gd.gov.cn/"],
-  ["省", "广东省人社厅政策", "44", "https://hrss.gd.gov.cn/zwgk/xxgkml/zcfg/", "https://hrss.gd.gov.cn/"],
+  ["省", "广东省人社厅政策", "44", "https://hrss.gd.gov.cn/zcfg/", "https://hrss.gd.gov.cn/"],
   ["省", "广东省税务局", "44", "https://guangdong.chinatax.gov.cn/", "https://guangdong.chinatax.gov.cn/"],
   ["省", "广东省财政厅", "44", "https://czt.gd.gov.cn/", "https://czt.gd.gov.cn/"],
   ["市", "深圳市政府公报", "4403", "https://www.sz.gov.cn/zfgb/index.html", "https://www.sz.gov.cn/"],

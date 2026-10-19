@@ -84,7 +84,11 @@ export function AdminApp() {
   useEffect(() => {
     api<{ user: { role: string; must_change_password: boolean; name: string } }>("/api/me").then(setMe).catch((err) => setError(err.message));
   }, []);
-  useEffect(() => { setMenu(false); setFeedback(""); }, [location.pathname]);
+  useEffect(() => {
+    setMenu(false);
+    setFeedback("");
+    document.querySelector("main")?.scrollTo(0, 0);
+  }, [location.pathname]);
   if (error) return <div className="p-6"><Banner tone="error">{error}</Banner><Link to="/login">去登录</Link></div>;
   if (!me) return <p className="p-6 text-sm">正在进入后台…</p>;
   if (me.user.role === "enterprise") return <Navigate to="/app" replace />;
@@ -124,11 +128,11 @@ export function AdminApp() {
           <div className="border-t border-white/10 p-3">
             <p className="truncate text-sm font-semibold">{me.user.name}</p>
             <p className="text-xs text-[#93a9cb]">{me.user.role === "admin" ? "管理员" : "顾问"}</p>
-            <button type="button" className="mt-2 text-sm font-semibold text-[#d5e2f7] hover:text-white" data-testid="admin-logout" onClick={logout}>退出登录</button>
+            <button type="button" className="mt-2 whitespace-nowrap text-sm font-semibold text-[#d5e2f7] hover:text-white" data-testid="admin-logout" onClick={logout}>退出登录</button>
           </div>
         </aside>
-        <main className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-6xl px-4 py-5">
+        <main className="min-h-0 flex-1 overflow-y-auto text-[15px]">
+        <div className="mx-auto w-full max-w-[1440px] px-4 py-5">
         <RoleContext.Provider value={me.user.role}>
         <FeedbackContext.Provider value={setFeedback}>
         {feedback ? <div data-testid="action-feedback" className="mb-3"><Banner>{feedback}</Banner></div> : null}
@@ -167,42 +171,73 @@ function useData<T>(path: string) {
   return { data, error, reload };
 }
 
+function todoHref(key: string, row: Record<string, string>) {
+  if (key === "drafts") return `/admin/policy-drafts/${row.id}`;
+  if (key === "expiring") return `/admin/policies/${row.id}`;
+  return `/admin/enterprises/${row.enterprise_id || row.id}`;
+}
+
 function Todos() {
   const { data, error, reload } = useData<{ groups: { key: string; title: string; count: number }[]; lists: Record<string, Record<string, string>[]> }>("/api/admin/todos");
   const notify = useNotify();
   const [focus, setFocus] = useState("");
+  useEffect(() => {
+    if (!focus) return;
+    document.getElementById(`todo-${focus}`)?.scrollIntoView({ block: "start" });
+  }, [focus, data]);
   if (error) return <Banner tone="error">{error}</Banner>;
   if (!data) return <p>正在读取待办…</p>;
+  const focused = data.groups.find((group) => group.key === focus);
+  const visible = focused ? [focused] : data.groups;
   return (
     <div className="space-y-4" data-testid="admin-home">
       <PageHeader kicker="工作台" title="待办" description="先处理待复核和企业预约，再看补传、草稿和即将到期的规则。" />
-      {focus ? <p className="text-sm text-muted" data-testid="todo-focus">正在查看：{focus}</p> : null}
+      {focused ? <p className="text-sm text-muted" data-testid="todo-focus">正在查看：{focused.title}</p> : <p className="text-sm text-muted" data-testid="todo-focus">正在查看全部待办</p>}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
-        {data.groups.map((group) => <StatCard key={group.key} label={group.title} value={group.count} active={focus === group.title} onClick={() => { setFocus(group.title); document.getElementById(`todo-${group.key}`)?.scrollIntoView({ block: "start" }); }} />)}
+        {data.groups.map((group) => (
+          <StatCard
+            key={group.key}
+            testId={`todo-card-${group.key}`}
+            label={group.title}
+            value={group.count}
+            active={focus === group.key}
+            onClick={() => {
+              const next = focus === group.key ? "" : group.key;
+              setFocus(next);
+              notify(next ? `正在只看待办「${group.title}」` : "已显示全部待办");
+            }}
+          />
+        ))}
       </div>
-      {data.groups.map((group) => (
-        <Card key={group.key}>
-          <div id={`todo-${group.key}`} />
-          <h2 className="font-semibold text-navy">{group.title}</h2>
-          {(data.lists[group.key] || []).length === 0 ? <div className="mt-3"><EmptyState title="暂无">{group.title}里现在没有待处理事项。</EmptyState></div> : (
-            <div className="mt-3 overflow-x-auto">
-              <table className="app-table">
-                <thead><tr><th>事项</th><th>联系方式</th><th>时间</th><th></th></tr></thead>
-                <tbody>
-                  {(data.lists[group.key] || []).map((row) => (
-                    <tr key={row.id}>
-                      <td><Link className="font-semibold text-[#1e4fc8]" to={`/admin/enterprises/${row.enterprise_id || row.id}`}>{row.name || row.title || row.id}</Link></td>
-                      <td className="text-muted">{row.contact_phone || "—"} {row.city || ""}</td>
-                      <td className="text-muted">{row.time?.slice(0, 16).replace("T", " ") || "—"}</td>
-                      <td>{group.key === "appointments" ? <button type="button" className="text-sm font-semibold text-[#1e4fc8]" data-testid="appointment-done" onClick={() => run(notify, async () => { await api(`/api/admin/appointments/${row.id}`, { method: "PATCH", body: JSON.stringify({ status: "已联系" }) }); reload(); return `已把「${row.name || row.title || "这条预约"}」标为已联系`; })}>已联系</button> : null}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      {visible.map((group) => {
+        const rows = data.lists[group.key] || [];
+        const truncated = group.count > rows.length;
+        return (
+          <Card key={group.key}>
+            <div id={`todo-${group.key}`} data-testid={`todo-section-${group.key}`}>
+              <h2 className="font-semibold text-navy">{group.title}</h2>
+              <p className="text-sm text-muted" data-testid={`todo-count-${group.key}`}>共 {group.count} 条{truncated ? "，这里显示最近 20 条" : ""}</p>
+              {group.count === 0 ? <div className="mt-3"><EmptyState title="暂无">{group.title}里现在没有待处理事项。</EmptyState></div> : rows.length === 0 ? <p className="mt-3 text-sm">共 {group.count} 条，列表还没展开，请点刷新后再看。</p> : (
+                <div className="mt-3 overflow-x-auto">
+                  <table className="app-table">
+                    <thead><tr><th>事项</th><th>联系方式</th><th>时间</th><th></th></tr></thead>
+                    <tbody>
+                      {rows.map((row) => (
+                        <tr key={row.id}>
+                          <td><Link className="font-semibold text-[#1e4fc8]" to={todoHref(group.key, row)}>{row.name || row.title || "未命名"}</Link></td>
+                          <td className="text-muted">{row.contact_phone || "—"} {row.city || ""}</td>
+                          <td className="text-muted">{row.time?.slice(0, 16).replace("T", " ") || "—"}</td>
+                          <td>{group.key === "appointments" ? <button type="button" className="whitespace-nowrap text-sm font-semibold text-[#1e4fc8]" data-testid="appointment-done" onClick={() => run(notify, async () => { await api(`/api/admin/appointments/${row.id}`, { method: "PATCH", body: JSON.stringify({ status: "已联系" }) }); reload(); return `已把「${row.name || row.title || "这条预约"}」标为已联系`; })}>已联系</button> : null}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
-          )}
-        </Card>
-      ))}
+          </Card>
+        );
+      })}
     </div>
   );
 }
@@ -221,13 +256,13 @@ function EnterpriseList() {
           <StatCard key={item} label={item} value={counts[item] || 0} active={status === item} onClick={() => { const next = status === item ? "" : item; setStatus(next); notify(next ? `正在只看「${item}」` : "已显示全部企业"); }} />
         ))}
       </div>
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <Input placeholder="企业名或手机号" value={q} onChange={(e) => setQ(e.target.value)} data-testid="enterprise-search" />
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <Input className="sm:min-w-0 sm:flex-1" placeholder="企业名或手机号" value={q} onChange={(e) => setQ(e.target.value)} data-testid="enterprise-search" />
         <select className="rounded-[11px] border border-[#d8e1ef] bg-white px-3" value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">全部状态</option>
           {STATUSES.map((item) => <option key={item}>{item}</option>)}
         </select>
-        <Button type="button" variant="outline" data-testid="enterprise-query" onClick={() => { reload(); notify(q || status ? `已按「${q || status}」查询` : "已查询全部企业"); }}>查询</Button>
+        <Button type="button" variant="outline" className="shrink-0" data-testid="enterprise-query" onClick={() => { reload(); notify(q || status ? `已按「${q || status}」查询` : "已查询全部企业"); }}>查询</Button>
       </div>
       {error ? <Banner tone="error">{error}</Banner> : null}
       {data && data.enterprises.length === 0 ? <EmptyState title="没有符合条件的企业">换一个状态，或用企业名、手机号再查一次。</EmptyState> : (
@@ -443,7 +478,8 @@ function EnterpriseDetail() {
             <Label>行业</Label>
             <Input name="industry" defaultValue={String(value("industry") || "")} data-testid="industry" />
             <Label>成立日期</Label>
-            <Input name="established" defaultValue={String(value("established") || "")} placeholder="2014-01-01" data-testid="established" />
+            <Input name="established" defaultValue={/^\d{4}-\d{2}-\d{2}$/.test(String(value("established") || "")) ? String(value("established")) : ""} placeholder="待识别" data-testid="established" />
+            {/^\d{4}-\d{2}-\d{2}$/.test(String(value("established") || "")) ? null : <p className="text-xs text-muted" data-testid="established-state">待识别</p>}
             <Label>注册资本（元）</Label>
             <Input name="registered_capital" defaultValue={String(value("registered_capital") || "")} data-testid="capital" />
             <Label>镇街</Label>
@@ -607,11 +643,19 @@ const POLICY_TEMPLATE = `{
 }`;
 
 function Policies() {
-  const { data, error, reload } = useData<{ policies: { id: string; code: string; name: string; status: string; category: string }[] }>("/api/admin/policies");
+  const [q, setQ] = useState("");
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
+  const [level, setLevel] = useState("");
+  const [page, setPage] = useState(1);
+  const { data, error, reload } = useData<{ policies: { id: string; code: string; name: string; status: string; category: string; level?: string }[]; total: number; page: number; page_size: number }>(`/api/admin/policies?page=${page}&q=${encodeURIComponent(query)}&status=${encodeURIComponent(status)}&level=${encodeURIComponent(level)}`);
   const admin = useIsAdmin();
   const [json, setJson] = useState(POLICY_TEMPLATE);
   const [msg, setMsg] = useState("");
   const report = (text: string) => setMsg(text);
+  const total = data?.total || 0;
+  const pageSize = data?.page_size || 20;
+  const pages = Math.max(1, Math.ceil(total / pageSize));
   if (error) return <Banner tone="error">{error}</Banner>;
   return (
     <div className="space-y-4" data-testid="policy-library">
@@ -624,39 +668,72 @@ function Policies() {
           if (!admin) return report("仅管理员可以新建规则");
           try {
             const rule = JSON.parse(json);
-            if ((data?.policies || []).some((policy) => policy.code === rule.code)) {
-              report(`政策编码 ${rule.code} 已存在，请改一个编码再创建`);
+            const code = String(rule.code || "");
+            const existing = await api<{ policies: { code: string }[] }>(`/api/admin/policies?q=${encodeURIComponent(code)}`);
+            if (code && (existing.policies || []).some((policy) => policy.code === code)) {
+              setQ(code);
+              setQuery(code);
+              setPage(1);
+              report(`政策编码 ${code} 已存在，请改一个编码再创建`);
               return;
             }
             await api("/api/admin/policies", { method: "POST", body: JSON.stringify({ rule, basis: rule.basis || "" }) });
+            setQ(code);
+            setPage(1);
+            if (query === code && page === 1) reload();
+            else setQuery(code);
             report("已创建为草稿");
-            reload();
           } catch (err) {
             report(err instanceof Error ? err.message : "创建失败");
           }
         }}>创建草稿规则</Button>
         {msg ? <p className="mt-2 text-sm" data-testid="policy-create-msg">{msg}</p> : null}
       </Card>
-      <div className="overflow-x-auto rounded-[18px] border border-line bg-white shadow-[0_10px_32px_#1d46800a]">
-        <table className="app-table">
-          <thead><tr><th>政策</th><th>分类</th><th>状态</th><th></th></tr></thead>
-          <tbody>
-            {(data?.policies || []).map((policy) => (
-              <tr key={policy.id}>
-                <td><Link to={`/admin/policies/${policy.id}`} className="font-semibold text-[#1e4fc8]">{policy.name}</Link><div className="text-xs text-muted">{policy.code}</div></td>
-                <td>{policy.category}</td>
-                <td>{policy.status}</td>
-                <td className="text-right">{policy.status !== "启用" ? <Button type="button" data-testid={`enable-${policy.code}`} onClick={() => {
-                  if (!admin) return report(`仅管理员可以启用「${policy.name}」`);
-                  run(report, async () => { await api(`/api/admin/policies/${policy.id}/enable`, { method: "POST", body: "{}" }); reload(); return `已启用 ${policy.name}`; });
-                }}>启用</Button> : <Button type="button" variant="outline" data-testid={`disable-${policy.code}`} onClick={() => {
-                  if (!admin) return report(`仅管理员可以停用「${policy.name}」`);
-                  run(report, async () => { await api(`/api/admin/policies/${policy.id}/disable`, { method: "POST", body: "{}" }); reload(); return `已停用 ${policy.name}`; });
-                }}>停用</Button>}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <Input className="sm:min-w-0 sm:flex-1" placeholder="政策名称或编码" value={q} onChange={(e) => setQ(e.target.value)} data-testid="policy-search" />
+        <select className="rounded-[11px] border border-[#d8e1ef] bg-white px-3" data-testid="policy-status" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); report(e.target.value ? `正在只看「${e.target.value}」政策` : "已显示全部状态"); }}>
+          <option value="">全部状态</option>
+          <option>草稿</option>
+          <option>启用</option>
+          <option>停用</option>
+        </select>
+        <select className="rounded-[11px] border border-[#d8e1ef] bg-white px-3" data-testid="policy-level" value={level} onChange={(e) => { setLevel(e.target.value); setPage(1); report(e.target.value ? `正在只看「${e.target.value}」层级` : "已显示全部层级"); }}>
+          <option value="">全部层级</option>
+          <option>国家</option>
+          <option>省</option>
+          <option>市</option>
+          <option>区县</option>
+        </select>
+        <Button type="button" variant="outline" data-testid="policy-query" onClick={() => { setQuery(q.trim()); setPage(1); report(q.trim() ? `已按「${q.trim()}」查询政策` : "已查询全部政策"); }}>查询</Button>
+      </div>
+      {data && data.policies.length === 0 ? <EmptyState title="没有符合条件的政策">换一个状态、层级，或用名称、编码再查一次。</EmptyState> : (
+        <div className="overflow-x-auto rounded-[18px] border border-line bg-white shadow-[0_10px_32px_#1d46800a]">
+          <table className="app-table">
+            <thead><tr><th>政策</th><th>分类</th><th>层级</th><th>状态</th><th></th></tr></thead>
+            <tbody>
+              {(data?.policies || []).map((policy) => (
+                <tr key={policy.id}>
+                  <td><Link to={`/admin/policies/${policy.id}`} className="font-semibold text-[#1e4fc8]">{policy.name}</Link><div className="text-xs text-muted">{policy.code}</div></td>
+                  <td>{policy.category}</td>
+                  <td>{policy.level || "—"}</td>
+                  <td>{policy.status}</td>
+                  <td className="text-right">{policy.status !== "启用" ? <Button type="button" data-testid={`enable-${policy.code}`} onClick={() => {
+                    if (!admin) return report(`仅管理员可以启用「${policy.name}」`);
+                    run(report, async () => { await api(`/api/admin/policies/${policy.id}/enable`, { method: "POST", body: "{}" }); reload(); return `已启用 ${policy.name}`; });
+                  }}>启用</Button> : <Button type="button" variant="outline" data-testid={`disable-${policy.code}`} onClick={() => {
+                    if (!admin) return report(`仅管理员可以停用「${policy.name}」`);
+                    run(report, async () => { await api(`/api/admin/policies/${policy.id}/disable`, { method: "POST", body: "{}" }); reload(); return `已停用 ${policy.name}`; });
+                  }}>停用</Button>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div className="flex items-center gap-2" data-testid="policy-page">
+        <Button type="button" variant="outline" data-testid="policy-prev" disabled={page <= 1} onClick={() => { setPage(page - 1); report(`政策库第 ${page - 1} 页`); }}>上一页</Button>
+        <span className="text-sm text-muted">第 {page} / {pages} 页，共 {total} 条</span>
+        <Button type="button" variant="outline" data-testid="policy-next" disabled={page >= pages} onClick={() => { setPage(page + 1); report(`政策库第 ${page + 1} 页`); }}>下一页</Button>
       </div>
     </div>
   );
@@ -743,11 +820,44 @@ function PolicyEdit() {
 }
 
 function Drafts() {
-  const { data, error, reload } = useData<{ drafts: { id: string; title: string; status: string; source_url?: string }[] }>("/api/admin/policy-drafts");
+  const [q, setQ] = useState("");
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
+  const [junk, setJunk] = useState(false);
+  const [page, setPage] = useState(1);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [listMsg, setListMsg] = useState("");
+  const { data, error, reload } = useData<{ drafts: { id: string; title: string; status: string; junk?: boolean; junk_reason?: string }[]; total: number; page_size: number }>(`/api/admin/policy-drafts?page=${page}&q=${encodeURIComponent(query)}&status=${encodeURIComponent(status)}&junk=${junk ? "1" : "0"}`);
   const [text, setText] = useState("");
   const [msg, setMsg] = useState("");
   const report = (value: string) => setMsg(value);
+  const total = data?.total || 0;
+  const pages = Math.max(1, Math.ceil(total / (data?.page_size || 20)));
   if (error) return <Banner tone="error">{error}</Banner>;
+  async function rejectSelected() {
+    if (!picked.length) {
+      setListMsg("请先勾选要驳回的草稿");
+      return;
+    }
+    try {
+      const res = await api<{ rejected: number }>("/api/admin/policy-drafts/bulk-reject", { method: "POST", body: JSON.stringify({ ids: picked }) });
+      setPicked([]);
+      setListMsg(res.rejected ? `已批量驳回 ${res.rejected} 份草稿` : "选中的草稿都不是待审核，没有驳回");
+      await reload();
+    } catch (err) {
+      setListMsg(err instanceof Error ? err.message : "批量驳回失败");
+    }
+  }
+  async function rejectJunk() {
+    try {
+      const res = await api<{ rejected: number }>("/api/admin/policy-drafts/bulk-reject", { method: "POST", body: JSON.stringify({ junk: true }) });
+      setPicked([]);
+      setListMsg(res.rejected ? `已驳回 ${res.rejected} 份疑似无效草稿` : "没有疑似无效的待审核草稿");
+      await reload();
+    } catch (err) {
+      setListMsg(err instanceof Error ? err.message : "批量驳回失败");
+    }
+  }
   return (
     <div className="space-y-3" data-testid="policy-drafts">
       <PageHeader kicker="政策" title="草稿" description="粘贴政策原文，生成待审核草稿。自动抓取的结果也会出现在这里。" />
@@ -766,14 +876,36 @@ function Drafts() {
         }}>生成待审核草稿</Button>
         {msg ? <p className="mt-2 text-sm" data-testid="paste-result">{msg}</p> : null}
       </Card>
-      {data && data.drafts.length === 0 ? <EmptyState title="还没有草稿">粘贴原文，或等抓取来源产出待审核记录。</EmptyState> : (
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <Input className="sm:min-w-0 sm:flex-1" placeholder="草稿标题" value={q} onChange={(e) => setQ(e.target.value)} data-testid="draft-search" />
+        <select className="rounded-[11px] border border-[#d8e1ef] bg-white px-3" data-testid="draft-status" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); setListMsg(e.target.value ? `正在只看「${e.target.value}」草稿` : "已显示全部状态"); }}>
+          <option value="">全部状态</option>
+          <option>待审核</option>
+          <option>已采纳</option>
+          <option>已驳回</option>
+          <option>重复</option>
+        </select>
+        <Button type="button" variant={junk ? "primary" : "outline"} data-testid="draft-junk-filter" onClick={() => { const next = !junk; setJunk(next); setPage(1); setListMsg(next ? "正在只看疑似无效草稿" : "已显示全部草稿"); }}>疑似无效</Button>
+        <Button type="button" variant="outline" data-testid="draft-query" onClick={() => { setQuery(q.trim()); setPage(1); setListMsg(q.trim() ? `已按「${q.trim()}」查询草稿` : "已查询全部草稿"); }}>查询</Button>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" variant="outline" data-testid="bulk-reject" onClick={rejectSelected}>批量驳回</Button>
+        <Button type="button" variant="outline" data-testid="bulk-reject-junk" onClick={rejectJunk}>驳回全部疑似无效</Button>
+      </div>
+      {listMsg ? <p className="text-sm" data-testid="draft-list-msg">{listMsg}</p> : null}
+      {data && data.drafts.length === 0 ? <EmptyState title={junk ? "没有疑似无效草稿" : "还没有草稿"}>{junk ? "当前筛选下没有标题像导航、脚本或网站名的草稿。" : "粘贴原文，或等抓取来源产出待审核记录。"}</EmptyState> : (
         <div className="overflow-x-auto rounded-[18px] border border-line bg-white shadow-[0_10px_32px_#1d46800a]">
           <table className="app-table">
-            <thead><tr><th>标题</th><th>状态</th></tr></thead>
-            <tbody>{(data?.drafts || []).map((draft) => <tr key={draft.id}><td><Link className="font-semibold text-[#1e4fc8]" to={`/admin/policy-drafts/${draft.id}`}>{draft.title}</Link></td><td>{draft.status}</td></tr>)}</tbody>
+            <thead><tr><th></th><th>标题</th><th>状态</th></tr></thead>
+            <tbody>{(data?.drafts || []).map((draft) => <tr key={draft.id}><td><input type="checkbox" aria-label={`选择 ${draft.title}`} checked={picked.includes(draft.id)} onChange={(e) => setPicked(e.target.checked ? [...picked, draft.id] : picked.filter((id) => id !== draft.id))} /></td><td><Link className="font-semibold text-[#1e4fc8]" to={`/admin/policy-drafts/${draft.id}`}>{draft.title}</Link>{draft.junk ? <div className="text-xs text-[#7f1d1d]">疑似无效{draft.junk_reason ? `：${draft.junk_reason}` : ""}</div> : null}</td><td>{draft.status}</td></tr>)}</tbody>
           </table>
         </div>
       )}
+      <div className="flex items-center gap-2" data-testid="draft-page">
+        <Button type="button" variant="outline" data-testid="draft-prev" disabled={page <= 1} onClick={() => { setPage(page - 1); setListMsg(`草稿第 ${page - 1} 页`); }}>上一页</Button>
+        <span className="text-sm text-muted">第 {page} / {pages} 页，共 {total} 条</span>
+        <Button type="button" variant="outline" data-testid="draft-next" disabled={page >= pages} onClick={() => { setPage(page + 1); setListMsg(`草稿第 ${page + 1} 页`); }}>下一页</Button>
+      </div>
     </div>
   );
 }
@@ -831,6 +963,8 @@ function Sources() {
   const { data, error, reload } = useData<{ sources: { id: string; name: string; enabled: number; list_url: string; last_status?: string }[] }>("/api/admin/policy-sources");
   const admin = useIsAdmin();
   const [msg, setMsg] = useState("");
+  const [live, setLive] = useState<Record<string, string>>({});
+  const [testingId, setTestingId] = useState("");
   const report = (value: string) => setMsg(value);
   if (error) return <Banner tone="error">{error}</Banner>;
   async function addSource(e: FormEvent<HTMLFormElement>) {
@@ -874,12 +1008,19 @@ function Sources() {
               }}>{source.enabled ? "停用" : "启用"}</Button>
               <Button type="button" variant="outline" data-testid={`source-test-${source.id}`} onClick={() => {
                 if (!admin) return report(`仅管理员可以试抓「${source.name}」`);
-                report(`正在试抓「${source.name}」…`);
-                run(report, async () => {
+                const pending = `正在试抓「${source.name}」…`;
+                setTestingId(source.id);
+                setLive((prev) => ({ ...prev, [source.id]: pending }));
+                report(pending);
+                run((value) => {
+                  setLive((prev) => ({ ...prev, [source.id]: value }));
+                  setTestingId("");
+                  report(value);
+                }, async () => {
                   const res = await api<{ message?: string }>(`/api/admin/policy-sources/${source.id}/test`, { method: "POST", body: "{}" });
                   return res.message || `${source.name} 试抓完成`;
                 });
-              }}>试抓</Button>
+              }}>{testingId === source.id ? "试抓中…" : "试抓"}</Button>
               <Button type="button" variant="outline" data-testid={`source-run-${source.id}`} onClick={() => {
                 if (!admin) return report(`仅管理员可以手动抓取「${source.name}」`);
                 report(`正在发起「${source.name}」的手动抓取…`);
@@ -889,6 +1030,7 @@ function Sources() {
                 });
               }}>手动抓取</Button>
             </div>
+            {live[source.id] ? <p className="mt-2 text-sm" data-testid={`source-live-${source.id}`}>{live[source.id]}</p> : <p className="mt-2 text-sm text-muted" data-testid={`source-live-${source.id}`}>试抓结果会显示在这里</p>}
           </li>
         ))}
       </ul>
@@ -918,8 +1060,8 @@ function Crawls() {
       {data && data.runs.length === 0 ? <EmptyState title="还没有运行记录">从来源页发起首次批量抓取后，结果会出现在这里。</EmptyState> : (
         <div className="overflow-x-auto rounded-[18px] border border-line bg-white shadow-[0_10px_32px_#1d46800a]">
           <table className="app-table">
-            <thead><tr><th>类型</th><th>状态</th><th>新草稿</th><th>失败来源</th></tr></thead>
-            <tbody>{(data?.runs || []).map((run) => <tr key={String(run.id)}><td>{typeLabel(String(run.type))}</td><td>{run.status}</td><td>{run.drafts_created}</td><td>{run.sources_failed}</td></tr>)}</tbody>
+            <thead><tr><th>类型</th><th>来源</th><th>状态</th><th>开始</th><th>结束</th><th>新草稿</th><th>失败来源</th></tr></thead>
+            <tbody>{(data?.runs || []).map((run) => <tr key={String(run.id)}><td>{typeLabel(String(run.type))}</td><td>{String(run.source_name || "—")}</td><td>{run.status}</td><td className="whitespace-nowrap">{String(run.started_at || "").replace("T", " ").slice(0, 19) || "—"}</td><td className="whitespace-nowrap">{String(run.finished_at || "").replace("T", " ").slice(0, 19) || "—"}</td><td>{run.drafts_created}</td><td>{run.sources_failed}</td></tr>)}</tbody>
           </table>
         </div>
       )}
@@ -958,7 +1100,11 @@ function AiSettingsBody() {
   const [vendor, setVendor] = useState("deepseek");
   const [msg, setMsg] = useState("");
   const [slots, setSlots] = useState<Record<string, string> | null>(null);
+  const [probes, setProbes] = useState<Record<string, { text: string; vision: string }>>({});
   const report = (value: string) => setMsg(value);
+  const setProbe = (id: string, kind: "text" | "vision", value: string) => {
+    setProbes((prev) => ({ ...prev, [id]: { text: prev[id]?.text || "", vision: prev[id]?.vision || "", [kind]: value } }));
+  };
   useEffect(() => {
     if (!settings.data) return;
     setSlots((prev) => prev ?? Object.fromEntries(MODEL_SLOT_KEYS.map((key) => [key, settings.data?.settings?.[key] || ""])));
@@ -1038,9 +1184,15 @@ function AiSettingsBody() {
           {(data?.providers || []).map((provider) => (
             <li key={provider.id} className="rounded-xl border border-line p-2">
               <b>{provider.name}</b> · {provider.vendor} · {provider.model} · sk-****{provider.api_key_last4}
-              <div className="mt-1 flex gap-2">
-                <Button type="button" variant="outline" data-testid="test-text" onClick={() => { report(`正在测试「${provider.name}」的文本连通…`); run(report, async () => { const res = await api<{ message?: string }>(`/api/admin/ai-providers/${provider.id}/test?mode=text`, { method: "POST", body: "{}" }); reload(); return res.message || `${provider.name} 文本测试完成`; }); }}>测试文本</Button>
-                <Button type="button" variant="outline" data-testid="test-vision" onClick={() => { report(`正在测试「${provider.name}」能不能看图…`); run(report, async () => { const res = await api<{ message?: string }>(`/api/admin/ai-providers/${provider.id}/test?mode=vision`, { method: "POST", body: "{}" }); reload(); return res.message || `${provider.name} 视觉测试完成`; }); }}>测试视觉</Button>
+              <div className="mt-2 flex flex-wrap items-start gap-3">
+                <div>
+                  <Button type="button" variant="outline" data-testid="test-text" onClick={() => { setProbe(provider.id, "text", `正在测试「${provider.name}」的文本连通…`); run((value) => setProbe(provider.id, "text", value), async () => { const res = await api<{ message?: string }>(`/api/admin/ai-providers/${provider.id}/test?mode=text`, { method: "POST", body: "{}" }); reload(); return res.message || `${provider.name} 文本测试完成`; }); }}>测试文本</Button>
+                  <p className="mt-1 max-w-xs text-sm" data-testid="test-text-result">{probes[provider.id]?.text || "文本测试结果会显示在这里"}</p>
+                </div>
+                <div>
+                  <Button type="button" variant="outline" data-testid="test-vision" onClick={() => { setProbe(provider.id, "vision", `正在测试「${provider.name}」能不能看图…`); run((value) => setProbe(provider.id, "vision", value), async () => { const res = await api<{ message?: string }>(`/api/admin/ai-providers/${provider.id}/test?mode=vision`, { method: "POST", body: "{}" }); reload(); return res.message || `${provider.name} 视觉测试完成`; }); }}>测试视觉</Button>
+                  <p className="mt-1 max-w-xs text-sm" data-testid="test-vision-result">{probes[provider.id]?.vision || "视觉测试结果会显示在这里"}</p>
+                </div>
               </div>
               {provider.last_test_msg ? <p className="text-muted">{provider.last_test_msg}</p> : null}
             </li>
@@ -1141,7 +1293,7 @@ function UsersBody() {
         {(data?.users || []).length === 0 ? <EmptyState title="还没有账号" /> : (
           <table className="app-table">
             <thead><tr><th>姓名</th><th>手机号</th><th>角色</th><th></th></tr></thead>
-            <tbody>{(data?.users || []).map((user) => <tr key={user.id}><td>{user.name}</td><td>{user.phone}</td><td>{user.role}</td><td><button type="button" className="text-sm font-semibold text-[#1e4fc8]" data-testid={`reset-${user.phone}`} disabled={busy} onClick={() => reset(user)}>重置密码</button></td></tr>)}</tbody>
+            <tbody>{(data?.users || []).map((user) => <tr key={user.id}><td>{user.name}</td><td>{user.phone}</td><td>{user.role}</td><td><button type="button" className="whitespace-nowrap text-sm font-semibold text-[#1e4fc8]" data-testid={`reset-${user.phone}`} disabled={busy} onClick={() => reset(user)}>重置密码</button></td></tr>)}</tbody>
           </table>
         )}
       </Card>
@@ -1157,7 +1309,7 @@ function Audit() {
 }
 
 function AuditBody() {
-  const { data, error } = useData<{ logs: { id: string; action: string; created_at: string; target_id?: string }[] }>("/api/admin/audit");
+  const { data, error } = useData<{ logs: { id: string; action: string; action_label?: string; target_name?: string; created_at: string }[] }>("/api/admin/audit");
   if (error) return <Banner tone="error">{error}</Banner>;
   return (
     <div className="space-y-4">
@@ -1166,7 +1318,7 @@ function AuditBody() {
         <div className="overflow-x-auto rounded-[18px] border border-line bg-white shadow-[0_10px_32px_#1d46800a]" data-testid="audit-log">
           <table className="app-table">
             <thead><tr><th>时间</th><th>动作</th><th>对象</th></tr></thead>
-            <tbody>{(data?.logs || []).map((log) => <tr key={log.id}><td className="whitespace-nowrap text-muted">{log.created_at.replace("T", " ").slice(0, 19)}</td><td>{log.action}</td><td className="text-muted">{log.target_id}</td></tr>)}</tbody>
+            <tbody>{(data?.logs || []).map((log) => <tr key={log.id}><td className="whitespace-nowrap text-muted">{log.created_at.replace("T", " ").slice(0, 19)}</td><td>{log.action_label || log.action}</td><td className="text-muted">{log.target_name || "—"}</td></tr>)}</tbody>
           </table>
         </div>
       )}
@@ -1200,6 +1352,9 @@ function SettingsBody() {
   const { data, error } = useData<{ settings: Record<string, string> }>("/api/admin/settings");
   const [msg, setMsg] = useState("");
   const [bands, setBands] = useState<BandDraft[] | null>(null);
+  const [webhookText, setWebhookText] = useState("");
+  const [webhookShown, setWebhookShown] = useState(false);
+  const [webhookNote, setWebhookNote] = useState("");
   useEffect(() => {
     if (!data || bands) return;
     setBands(draftsFrom(data.settings.estimate_bands));
@@ -1237,8 +1392,8 @@ function SettingsBody() {
           settings: {
             consultant_phone: form.get("consultant_phone"),
             consultant_wechat: form.get("consultant_wechat"),
-            wecom_webhook: webhook,
             estimate_bands: JSON.stringify(checked.bands),
+            ...(webhook.startsWith("https://") ? { wecom_webhook: webhook } : {}),
           },
         }),
       });
@@ -1258,7 +1413,25 @@ function SettingsBody() {
         <Label>顾问微信</Label>
         <Input name="consultant_wechat" defaultValue={data.settings.consultant_wechat || ""} />
         <Label>企业微信机器人 webhook</Label>
-        <Input name="wecom_webhook" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..." />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Input className="sm:min-w-0 sm:flex-1" name="wecom_webhook" type={webhookShown ? "text" : "password"} value={webhookText} onChange={(e) => setWebhookText(e.target.value)} placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..." autoComplete="off" data-testid="webhook-url" />
+          <Button type="button" variant="outline" data-testid="webhook-toggle" onClick={async () => {
+            if (webhookShown) {
+              setWebhookShown(false);
+              setWebhookNote("已隐藏 webhook");
+              return;
+            }
+            try {
+              const res = await api<{ url: string; configured: boolean }>("/api/admin/settings/webhook");
+              setWebhookText(res.url || "");
+              setWebhookShown(true);
+              setWebhookNote(res.configured ? "已显示 webhook" : "尚未配置 webhook");
+            } catch (err) {
+              setWebhookNote(err instanceof Error ? err.message : "读取 webhook 失败");
+            }
+          }}>{webhookShown ? "隐藏" : "显示"}</Button>
+        </div>
+        {webhookNote ? <p className="text-sm" data-testid="webhook-note">{webhookNote}</p> : <p className="text-sm text-muted" data-testid="webhook-note">webhook 默认隐藏</p>}
         <div>
           <h2 className="font-semibold">企业可见预估档</h2>
           <p className="text-sm text-muted">金额单位是万元。最后一档可以不填上限，表示“以上”。企业只看到档位，看不到系统测算的具体金额。</p>

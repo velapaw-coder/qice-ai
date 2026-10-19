@@ -4,7 +4,7 @@ import { cn } from "../lib/cn";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, TextareaHTMLAttributes } from "react";
 
 const buttonStyles = cva(
-  "inline-flex items-center justify-center gap-2 rounded-[11px] px-4 py-2.5 text-sm font-bold transition duration-200 hover:-translate-y-0.5 disabled:translate-y-0 disabled:cursor-not-allowed disabled:shadow-none",
+  "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-[11px] px-4 py-2.5 text-sm font-bold transition duration-200 hover:-translate-y-0.5 disabled:translate-y-0 disabled:cursor-not-allowed disabled:shadow-none",
   {
     variants: {
       variant: {
@@ -57,7 +57,7 @@ export function PageHeader({ kicker, title, description }: { kicker?: string; ti
   );
 }
 
-export function StatCard({ label, value, active, onClick }: { label: string; value: number | string; active?: boolean; onClick?: () => void }) {
+export function StatCard({ label, value, active, onClick, testId }: { label: string; value: number | string; active?: boolean; onClick?: () => void; testId?: string }) {
   const className = cn(
     "rounded-[18px] border bg-white p-4 text-left shadow-[0_10px_32px_#1d46800a] transition",
     active ? "border-brand ring-2 ring-[#3169f533]" : "border-line hover:border-[#b9ccf5]",
@@ -68,8 +68,8 @@ export function StatCard({ label, value, active, onClick }: { label: string; val
       <p className="mt-1 text-3xl font-extrabold tracking-tight text-[#255de4]">{value}</p>
     </>
   );
-  if (onClick) return <button type="button" onClick={onClick} className={className}>{body}</button>;
-  return <div className={className}>{body}</div>;
+  if (onClick) return <button type="button" data-testid={testId} onClick={onClick} className={className}>{body}</button>;
+  return <div className={className} data-testid={testId}>{body}</div>;
 }
 
 export function EmptyState({ title, children }: { title: string; children?: React.ReactNode }) {

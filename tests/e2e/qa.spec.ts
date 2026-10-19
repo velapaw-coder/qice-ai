@@ -288,18 +288,38 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
     await adminPage.getByTestId("dry-run").click();
     await expect(adminPage.getByTestId("dry-run-result")).toContainText("合成培训补贴修订");
     await expect(adminPage.getByTestId("dry-run-result")).toContainText("saved false");
+    await adminPage.locator("main").evaluate((node) => { node.scrollTop = 480; });
+    expect(await adminPage.locator("main").evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
     await adminPage.goto("/admin/policies");
+    await expect.poll(async () => adminPage.locator("main").evaluate((node) => node.scrollTop)).toBe(0);
+    await adminPage.locator("main").evaluate((node) => { node.scrollTop = 0; });
+    await adminPage.getByTestId("policy-search").fill("QA_TRAIN_SUBSIDY");
+    await adminPage.getByTestId("policy-query").click();
     await adminPage.getByTestId("enable-QA_TRAIN_SUBSIDY").click();
     await expect(adminPage.getByTestId("disable-QA_TRAIN_SUBSIDY")).toBeVisible();
     await adminPage.getByTestId("disable-QA_TRAIN_SUBSIDY").click();
     await expect(adminPage.getByTestId("enable-QA_TRAIN_SUBSIDY")).toBeVisible();
     await adminPage.getByTestId("enable-QA_TRAIN_SUBSIDY").click();
     await expect(adminPage.getByTestId("disable-QA_TRAIN_SUBSIDY")).toBeVisible();
+    await adminPage.getByTestId("policy-search").fill("");
+    await adminPage.getByTestId("policy-query").click();
+    await adminPage.getByTestId("policy-next").click();
+    await expect(adminPage.getByTestId("policy-page")).toContainText("第 2");
+    await adminPage.goto("/admin/enterprises");
+    await expect(adminPage.getByTestId("enterprise-query")).toHaveCSS("white-space", "nowrap");
 
     await adminPage.goto("/admin/policy-drafts");
     await adminPage.getByTestId("paste-text").fill("合成粘贴政策草案\n这是明确标注的合成政策原文，不是真实文件。");
     await adminPage.getByTestId("paste-import").click();
     await expect(adminPage.getByTestId("paste-result")).toContainText("已生成待审核草稿");
+    await adminPage.goto("/admin");
+    await adminPage.getByTestId("todo-card-drafts").click();
+    await expect(adminPage.getByTestId("todo-focus")).toContainText("待审核政策草稿");
+    const draftTodo = adminPage.getByTestId("todo-section-drafts");
+    await expect(draftTodo).toContainText("合成粘贴政策草案");
+    await expect(draftTodo).not.toContainText("暂无");
+    await expect(draftTodo.getByTestId("todo-count-drafts")).toContainText("共");
+    await adminPage.goto("/admin/policy-drafts");
     await adminPage.getByRole("link", { name: "合成粘贴政策草案" }).click();
     await expect(adminPage.getByTestId("draft-status")).toContainText("待审核");
     await adminPage.getByTestId("draft-json").fill(JSON.stringify(PASTE_RULE));
@@ -317,6 +337,8 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
     expect(again.status()).toBe(409);
     expect(((await again.json()) as { error: string }).error).toContain("已经采纳过");
     await adminPage.goto("/admin/policies");
+    await adminPage.getByTestId("policy-search").fill("QA_PASTE_RULE");
+    await adminPage.getByTestId("policy-query").click();
     await adminPage.getByTestId("enable-QA_PASTE_RULE").click();
     await expect(adminPage.getByTestId("disable-QA_PASTE_RULE")).toBeVisible();
 
@@ -358,10 +380,12 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
 
     await adminPage.goto("/admin/audit");
     const audit = adminPage.getByTestId("audit-log");
-    await expect(audit).toContainText("consent.agree");
-    await expect(audit).toContainText("policy.create");
-    await expect(audit).toContainText("user.reset_password");
-    await expect(audit).toContainText("assessment.publish");
+    await expect(audit).toContainText("同意授权");
+    await expect(audit).toContainText("新建政策");
+    await expect(audit).toContainText("重置密码");
+    await expect(audit).toContainText("发布方案");
+    await expect(audit).toContainText("深圳");
+    await expect(audit).not.toContainText("consent.agree");
 
     await adminPage.goto("/admin/ai-settings");
     await adminPage.getByTestId("provider-name").fill("合成连通模型");
@@ -374,7 +398,7 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
     await adminPage.getByRole("button", { name: "保存模型" }).click();
     await expect(adminPage.locator("b", { hasText: "合成连通模型" })).toBeVisible();
     await adminPage.locator("li", { hasText: "合成连通模型" }).getByTestId("test-text").click();
-    await expect(adminPage.getByTestId("model-test-result")).toContainText("连通");
+    await expect(adminPage.locator("li", { hasText: "合成连通模型" }).getByTestId("test-text-result")).toContainText("连通");
     expect(hits.length).toBeGreaterThan(0);
     await expect(adminPage.getByTestId("save-assignment")).toBeEnabled({ timeout: 30_000 });
     await adminPage.locator("label", { hasText: "llm_vision_primary" }).locator("select").selectOption({ label: "合成连通模型" });

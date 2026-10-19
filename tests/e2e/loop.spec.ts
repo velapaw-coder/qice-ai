@@ -173,9 +173,9 @@ test("闭环：建账号、复核发布、管道、规则、抓取、模型和�
     await adminPage.getByRole("button", { name: "保存模型" }).click();
     await expect(adminPage.locator("b", { hasText: "闭环文本模型" })).toBeVisible();
     await adminPage.getByTestId("test-text").first().click();
-    await expect(adminPage.getByTestId("model-test-result")).toContainText("连通");
+    await expect(adminPage.getByTestId("test-text-result").first()).toContainText("连通");
     await adminPage.getByTestId("test-vision").first().click();
-    await expect(adminPage.getByTestId("model-test-result")).toContainText("图中的数字");
+    await expect(adminPage.getByTestId("test-vision-result").first()).toContainText("图中的数字");
 
     await consultantPage.goto("/admin/enterprises");
     await consultantPage.getByTestId("enterprise-search").fill(COMPANY);

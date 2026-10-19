@@ -51,7 +51,7 @@ button, input, select, textarea { font: inherit; }
   line-height: 1;
 }
 
-.app-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }
+.app-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 15px; }
 .app-table th { background: #f2f6ff; color: #526987; font-size: 12px; font-weight: 700; padding: 12px 14px; }
 .app-table td { padding: 12px 14px; border-top: 1px solid #e4eaf4; vertical-align: middle; }
 .app-table tbody tr:hover { background: #f8faff; }

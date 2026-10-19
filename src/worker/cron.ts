@@ -1,5 +1,5 @@
 import { encryptSecret } from "./crypto";
-import { enqueueCrawl } from "./crawl";
+import { closeStaleCrawlRuns, enqueueCrawl } from "./crawl";
 import { nowIso, uid, type Env } from "./util";
 
 export async function handleScheduled(event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
@@ -7,6 +7,7 @@ export async function handleScheduled(event: ScheduledController, env: Env, ctx:
 }
 
 async function runCron(cron: string, env: Env): Promise<void> {
+  await closeStaleCrawlRuns(env.DB);
   await ensureDeepseek(env);
   await expirePolicies(env);
   await deleteExpiredFiles(env);

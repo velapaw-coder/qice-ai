@@ -126,6 +126,8 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
   await consultantPage.getByRole("link", { name: "深圳爱华国际教育科技有限公司" }).first().click();
   await expect(consultantPage.getByTestId("admin-review")).toBeVisible();
   await consultantPage.getByTestId("industry").fill("教育");
+  await expect(consultantPage.getByTestId("established")).toHaveValue("");
+  await expect(consultantPage.getByTestId("established-state")).toHaveText("待识别");
   await consultantPage.getByTestId("established").fill("2014-01-01");
   await consultantPage.getByTestId("capital").fill("1000000");
   await consultantPage.getByTestId("dishonest").selectOption("false");
