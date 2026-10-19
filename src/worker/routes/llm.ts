@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { decryptSecret } from "../crypto";
 import { clientIp, nowIso, requireStaff, setting, type AppEnv } from "../util";
 import { joinUrl } from "../crawl";
+import { POLICY_EXTRACTION_PROMPT } from "../../shared/rules/suggest";
 
 const TASKS = new Set(["vat_text", "ss_text", "vat_image", "ss_image", "policy_text"]);
 
@@ -10,7 +11,7 @@ const PROMPTS: Record<string, string> = {
   ss_text: "从下面已脱敏的社保清单文本提取 JSON：company_name, uscc, region_hint, headcount, ss_total_month, ss_personal_month, young_candidates。不要输出姓名或证件号。",
   vat_image: "这是一张合成或客户上传的增值税申报表图片。只输出 JSON：company_name, uscc, taxpayer_type, periods[{start,end,sales,vat_payable,surtax}], unreadable(boolean)。不要输出证件号。",
   ss_image: "这是一张社保清单图片。只输出汇总 JSON：company_name, uscc, headcount, ss_personal_month, ss_total_month, young_candidates, unreadable(boolean)。不要输出姓名或证件号。",
-  policy_text: "判断下面文本是不是面向企业的就业、税收或补贴政策。只输出 JSON：relevant, ignore_reason, name, doc_no, issuer, definition_json。",
+  policy_text: POLICY_EXTRACTION_PROMPT,
 };
 
 export const llmRoutes = new Hono<AppEnv>();

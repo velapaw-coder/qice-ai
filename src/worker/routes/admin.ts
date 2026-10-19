@@ -2,10 +2,15 @@ import { Hono } from "hono";
 import { formatPublicBand, parseBands, suggestBand, validateBands } from "../../shared/bands";
 import { evaluate, DISCLAIMER } from "../../shared/rules/evaluate";
 import { parseRule } from "../../shared/rules/schema";
+import { normalizeSuggestedRule } from "../../shared/rules/suggest";
+import { emptyModelSlotRejection, MODEL_SLOT_KEYS } from "../../shared/modelSlots";
+import { adoptBlockedReason } from "../../shared/policyDraft";
+import { auditActionLabel, extractPolicyLinks, junkTitleReason, policyLevelFromRegions } from "../../shared/policyPage";
+import { assistantMessageText, makeVisionProbe, visionProbeFailure, visionProbePassed } from "../../shared/visionProbe";
 import type { PolicyRule } from "../../shared/rules/types";
 import { cityFromRegion, entityFromUscc, isValidUscc, regionFromUscc } from "../../shared/uscc";
 import { decryptSecret, encryptSecret } from "../crypto";
-import { enqueueCrawl, importTextDraft, joinUrl } from "../crawl";
+import { closeStaleCrawlRuns, enqueueCrawl, importTextDraft, joinUrl } from "../crawl";
 import { getEnterprise, loadEvalProfile, profileMap, runMatch, setStatus } from "../match";
 import { consentFailure, withUploadConsent } from "../consent";
 import { audit, beijingDate, clientIp, contentDisposition, hitLimit, notifyWecom, nowIso, readJson, requireStaff, setting, uid, type AppEnv } from "../util";
@@ -59,6 +64,17 @@ adminRoutes.get("/admin/todos", async (c) => {
         `SELECT a.id, a.enterprise_id, e.name, e.contact_phone, a.slot_pref, a.topic, a.note, a.created_at AS time
          FROM appointments a JOIN enterprises e ON e.id = a.enterprise_id WHERE a.status = '待联系' ORDER BY a.created_at DESC LIMIT 20`,
       ).all();
+    if (key === "drafts")
+      return db.prepare("SELECT id, title, title AS name, status, created_at AS time FROM policy_drafts WHERE status = '待审核' ORDER BY created_at DESC LIMIT 20").all();
+    if (key === "expiring")
+      return db.prepare(
+        `SELECT p.id, p.name, p.code, v.effective_to AS time
+         FROM policies p JOIN policy_versions v ON v.policy_id = p.id AND v.version = p.current_version
+         WHERE p.status = '启用' AND v.effective_to IS NOT NULL AND v.effective_to != '' AND v.effective_to <= ? AND v.effective_to >= ?
+         ORDER BY v.effective_to LIMIT 20`,
+      )
+        .bind(soon, today)
+        .all();
     return { results: [] };
   };
   const lists = Object.fromEntries(await Promise.all(groups.map(async (g) => [g.key, (await listFor(g.key)).results || []])));
@@ -415,8 +431,42 @@ adminRoutes.post("/admin/assessments/:id/publish", async (c) => {
 });
 
 adminRoutes.get("/admin/policies", async (c) => {
-  const rows = await c.env.DB.prepare("SELECT id, code, name, category, status, current_version, origin, updated_at FROM policies ORDER BY code").all();
-  return c.json({ policies: rows.results || [] });
+  const page = Math.max(1, Number(c.req.query("page") || 1) || 1);
+  const pageSize = 20;
+  const status = c.req.query("status") || "";
+  const level = c.req.query("level") || "";
+  const q = (c.req.query("q") || "").trim().toLowerCase();
+  const rows = await c.env.DB.prepare(
+    `SELECT p.id, p.code, p.name, p.category, p.status, p.current_version, p.origin, p.updated_at, v.definition_json
+     FROM policies p
+     LEFT JOIN policy_versions v ON v.policy_id = p.id AND v.version = p.current_version
+     ORDER BY p.code`,
+  ).all<{ id: string; code: string; name: string; category: string; status: string; current_version: number; origin: string; updated_at: string; definition_json: string | null }>();
+  let list = (rows.results || []).map((row) => {
+    let regions: string[] = [];
+    try {
+      regions = (JSON.parse(row.definition_json || "{}") as { regions?: string[] }).regions || [];
+    } catch {
+      regions = [];
+    }
+    return {
+      id: row.id,
+      code: row.code,
+      name: row.name,
+      category: row.category,
+      status: row.status,
+      current_version: row.current_version,
+      origin: row.origin,
+      updated_at: row.updated_at,
+      level: policyLevelFromRegions(regions),
+    };
+  });
+  if (status) list = list.filter((row) => row.status === status);
+  if (level) list = list.filter((row) => row.level === level);
+  if (q) list = list.filter((row) => `${row.name} ${row.code} ${row.category}`.toLowerCase().includes(q));
+  const total = list.length;
+  const policies = list.slice((page - 1) * pageSize, page * pageSize);
+  return c.json({ policies, total, page, page_size: pageSize });
 });
 
 adminRoutes.get("/admin/policies/:id", async (c) => {
@@ -619,6 +669,7 @@ adminRoutes.get("/admin/users", async (c) => {
 adminRoutes.post("/admin/users", async (c) => {
   if (!adminOnly(c.get("role"))) return c.json({ error: "只有管理员可以创建账号" }, 403);
   const body = await readJson<{ phone?: string; name?: string; role?: string; client_key?: string }>(c.req.raw);
+  if (body?.phone) body.phone = body.phone.trim();
   if (!body?.phone || !/^1\d{10}$/.test(body.phone)) return c.json({ error: "手机号不正确" }, 400);
   if (!body.client_key || !/^[0-9a-f]{64}$/.test(body.client_key)) return c.json({ error: "临时密码格式不正确" }, 400);
   if (body.role !== "consultant" && body.role !== "admin") return c.json({ error: "角色只能是顾问或管理员" }, 400);
@@ -627,11 +678,16 @@ adminRoutes.post("/admin/users", async (c) => {
   const { serverPasswordHash } = await import("../../shared/password");
   const hash = await serverPasswordHash(c.env.PEPPER, body.client_key, salt);
   const id = uid();
-  await c.env.DB.prepare(
-    "INSERT INTO users (id, phone, password_hash, salt, role, name, status, must_change_password, failed_logins, created_at) VALUES (?, ?, ?, ?, ?, ?, 'active', 1, 0, ?)",
-  )
-    .bind(id, body.phone, hash, salt, body.role, body.name || "", nowIso())
-    .run();
+  try {
+    await c.env.DB.prepare(
+      "INSERT INTO users (id, phone, password_hash, salt, role, name, status, must_change_password, failed_logins, created_at) VALUES (?, ?, ?, ?, ?, ?, 'active', 1, 0, ?)",
+    )
+      .bind(id, body.phone.trim(), hash, salt, body.role, (body.name || "").trim(), nowIso())
+      .run();
+  } catch (err) {
+    if (String(err).toLowerCase().includes("unique")) return c.json({ error: "这个手机号已经注册" }, 409);
+    throw err;
+  }
   await audit(c.env.DB, c.get("userId"), "user.create", "user", id, clientIp(c.req.raw), { role: body.role });
   return c.json({ id });
 });
@@ -664,13 +720,27 @@ adminRoutes.get("/admin/settings", async (c) => {
 
 adminRoutes.put("/admin/settings", async (c) => {
   if (!adminOnly(c.get("role"))) return c.json({ error: "只有管理员可以改系统设置" }, 403);
-  const body = await readJson<{ settings?: Record<string, string> }>(c.req.raw);
+  const body = await readJson<{ settings?: Record<string, string>; clear_model_slots?: boolean }>(c.req.raw);
   if (!body?.settings) return c.json({ error: "缺少设置" }, 400);
   const allowed = ["consultant_phone", "consultant_wechat", "wecom_webhook", "llm_text_primary", "llm_text_fallback", "llm_vision_primary", "llm_vision_fallback", "estimate_bands"];
+  if (MODEL_SLOT_KEYS.some((key) => Object.prototype.hasOwnProperty.call(body.settings, key))) {
+    const rows = await c.env.DB.prepare(
+      `SELECT key, value FROM settings WHERE key IN (${MODEL_SLOT_KEYS.map(() => "?").join(",")})`,
+    )
+      .bind(...MODEL_SLOT_KEYS)
+      .all<{ key: string; value: string }>();
+    const existing: Record<string, string> = {};
+    for (const row of rows.results || []) existing[row.key] = row.value;
+    const blocked = emptyModelSlotRejection(body.settings, existing, body.clear_model_slots === true);
+    if (blocked) return c.json({ error: blocked }, 409);
+  }
   for (const [key, raw] of Object.entries(body.settings)) {
     if (!allowed.includes(key)) continue;
     let value = raw;
-    if (key === "wecom_webhook" && value && !value.startsWith("https://")) return c.json({ error: "webhook 必须是 https 地址" }, 400);
+    if (key === "wecom_webhook") {
+      if (!value || value === "已配置") continue;
+      if (!value.startsWith("https://")) return c.json({ error: "webhook 必须是 https 地址" }, 400);
+    }
     if (key === "estimate_bands") {
       let parsed: unknown;
       try {
@@ -686,6 +756,12 @@ adminRoutes.put("/admin/settings", async (c) => {
   }
   await audit(c.env.DB, c.get("userId"), "settings.update", "settings", "settings", clientIp(c.req.raw), { keys: Object.keys(body.settings) });
   return c.json({ ok: true });
+});
+
+adminRoutes.get("/admin/settings/webhook", async (c) => {
+  if (!adminOnly(c.get("role"))) return c.json({ error: "只有管理员可以看系统设置" }, 403);
+  const url = (await setting(c.env.DB, "wecom_webhook")) || "";
+  return c.json({ url, configured: Boolean(url) });
 });
 
 const VENDORS: Record<string, string> = {
@@ -722,6 +798,8 @@ adminRoutes.post("/admin/ai-providers", async (c) => {
   }>(c.req.raw);
   if (!body?.name || !body.model || !body.vendor) return c.json({ error: "请填写名称、厂商和模型" }, 400);
   if (!body.api_key) return c.json({ error: "请填写 API key" }, 400);
+  const base = resolveBaseUrl(body.vendor, body.base_url);
+  if ("error" in base) return c.json({ error: base.error }, 400);
   let enc = "";
   try {
     enc = await encryptSecret(c.env.SETTINGS_ENC_KEY, body.api_key);
@@ -737,7 +815,7 @@ adminRoutes.post("/admin/ai-providers", async (c) => {
       id,
       body.name,
       body.vendor,
-      body.base_url || VENDORS[body.vendor] || "",
+      base.url,
       enc,
       body.api_key.slice(-4),
       body.model,
@@ -765,6 +843,15 @@ adminRoutes.patch("/admin/ai-providers/:id", async (c) => {
   if (typeof body.api_key === "string" && body.api_key) {
     enc = await encryptSecret(c.env.SETTINGS_ENC_KEY, body.api_key);
     last4 = body.api_key.slice(-4);
+  }
+  if (typeof body.base_url === "string" || typeof body.vendor === "string") {
+    const vendor = String(body.vendor || "");
+    const currentRow = await c.env.DB.prepare("SELECT vendor, base_url FROM ai_providers WHERE id = ?").bind(c.req.param("id")).first<{ vendor: string; base_url: string }>();
+    const nextVendor = vendor || currentRow?.vendor || "";
+    const nextBase = typeof body.base_url === "string" ? body.base_url : currentRow?.base_url;
+    const resolved = resolveBaseUrl(nextVendor, nextBase);
+    if ("error" in resolved) return c.json({ error: resolved.error }, 400);
+    body.base_url = resolved.url;
   }
   await c.env.DB.prepare(
     `UPDATE ai_providers SET name = COALESCE(?, name), base_url = COALESCE(?, base_url), model = COALESCE(?, model),
@@ -807,11 +894,12 @@ adminRoutes.post("/admin/ai-providers/:id/test", async (c) => {
   const started = Date.now();
   let ok = false;
   let message = "";
+  const probe = mode === "vision" ? makeVisionProbe() : null;
   try {
-    const content = mode === "vision"
+    const content = probe
       ? [
-          { type: "text", text: "读出图中的纳税人识别号和销售额，只输出 JSON。" },
-          { type: "image_url", image_url: { url: `data:image/png;base64,${SAMPLE_PNG}` } },
+          { type: "text", text: probe.prompt },
+          { type: "image_url", image_url: { url: `data:image/png;base64,${probe.pngBase64}` } },
         ]
       : "只输出 JSON：{\"ok\":true}";
     const payload: Record<string, unknown> = { model: row.model, messages: [{ role: "user", content }] };
@@ -823,10 +911,16 @@ adminRoutes.post("/admin/ai-providers/:id/test", async (c) => {
       signal: AbortSignal.timeout(Math.min(row.timeout_ms || 60_000, 60_000)),
     });
     const text = await res.text();
-    ok = res.ok && (mode === "vision" || text.includes("{"));
-    message = ok ? `连通，HTTP ${res.status}` : `失败 HTTP ${res.status} ${text.slice(0, 180)}`;
+    const reply = assistantMessageText(text);
+    if (probe) {
+      ok = res.ok && visionProbePassed(reply, probe.code);
+      message = ok ? `视觉连通，模型读出了图中的数字（HTTP ${res.status}）` : visionProbeFailure(reply, probe.code, res.status);
+    } else {
+      ok = res.ok && (text.includes("{") || reply.includes("{"));
+      message = ok ? `连通，HTTP ${res.status}` : `失败 HTTP ${res.status} ${text.slice(0, 180)}`;
+    }
   } catch (err) {
-    message = String(err).slice(0, 180);
+    message = probe ? visionProbeFailure("", probe.code, 0) + ` ${String(err).slice(0, 120)}` : String(err).slice(0, 180);
   }
   const ms = Date.now() - started;
   await c.env.DB.prepare("UPDATE ai_providers SET last_test_at = ?, last_test_ok = ?, last_test_msg = ? WHERE id = ?").bind(nowIso(), ok ? 1 : 0, `${message}（${ms}ms）`, c.req.param("id")).run();
@@ -870,21 +964,16 @@ adminRoutes.post("/admin/policy-sources/:id/test", async (c) => {
   if (!source) return c.json({ error: "来源不存在" }, 404);
   const started = Date.now();
   try {
-    const res = await fetch(source.list_url, { headers: { "user-agent": "QiceAIPolicyBot/1.0" }, signal: AbortSignal.timeout(12_000) });
+    const res = await fetch(source.list_url, { headers: { "user-agent": "QiceAIPolicyBot/1.0" }, redirect: "follow", signal: AbortSignal.timeout(8_000) });
     const html = (await res.text()).slice(0, 80_000);
-    let links = 0;
-    if (source.link_pattern) {
-      let from = 0;
-      while (links < 50) {
-        const at = html.indexOf(source.link_pattern, from);
-        if (at < 0) break;
-        links += 1;
-        from = at + source.link_pattern.length;
-      }
-    }
-    return c.json({ ok: res.ok, status: res.status, links, ms: Date.now() - started });
+    const found = extractPolicyLinks(html, source.list_url, source.link_pattern || "");
+    const message = res.ok ? `试抓成功，发现 ${found.length} 条政策链接` : `试抓失败 HTTP ${res.status}`;
+    return c.json({ ok: res.ok, status: res.status, links: found.length, ms: Date.now() - started, message });
   } catch (err) {
-    return c.json({ ok: false, message: String(err).slice(0, 180), ms: Date.now() - started });
+    const detail = String(err);
+    const timedOut = (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) || /timeout|aborted|timed out/i.test(detail);
+    const message = timedOut ? "试抓超时，列表页没有在时限内返回" : `试抓失败：${detail.slice(0, 160)}`;
+    return c.json({ ok: false, message, ms: Date.now() - started });
   }
 });
 
@@ -897,8 +986,19 @@ adminRoutes.post("/admin/crawl-runs", async (c) => {
 });
 
 adminRoutes.get("/admin/crawl-runs", async (c) => {
-  const rows = await c.env.DB.prepare("SELECT * FROM crawl_runs ORDER BY started_at DESC LIMIT 50").all();
-  return c.json({ runs: rows.results || [] });
+  await closeStaleCrawlRuns(c.env.DB);
+  const rows = await c.env.DB.prepare("SELECT * FROM crawl_runs ORDER BY started_at DESC LIMIT 50").all<{ errors_json?: string; source_name?: string }>();
+  const runs = (rows.results || []).map((row) => {
+    let sourceName = "";
+    try {
+      const parsed = JSON.parse(row.errors_json || "{}") as { source_name?: string } | unknown[];
+      if (parsed && !Array.isArray(parsed)) sourceName = parsed.source_name || "";
+    } catch {
+      sourceName = "";
+    }
+    return { ...row, source_name: sourceName || "—" };
+  });
+  return c.json({ runs });
 });
 
 adminRoutes.get("/admin/crawl-runs/:id", async (c) => {
@@ -908,11 +1008,48 @@ adminRoutes.get("/admin/crawl-runs/:id", async (c) => {
 });
 
 adminRoutes.get("/admin/policy-drafts", async (c) => {
+  const page = Math.max(1, Number(c.req.query("page") || 1) || 1);
+  const pageSize = 20;
   const status = c.req.query("status") || "";
-  const rows = await c.env.DB.prepare("SELECT id, title, doc_no, source_url, relevance, status, match_type, created_at, has_pdf FROM policy_drafts WHERE (? = '' OR status = ?) ORDER BY created_at DESC LIMIT 100")
-    .bind(status, status)
-    .all();
-  return c.json({ drafts: rows.results || [] });
+  const q = (c.req.query("q") || "").trim();
+  const junkOnly = c.req.query("junk") === "1";
+  const rows = await c.env.DB.prepare(
+    "SELECT id, title, doc_no, source_url, relevance, status, match_type, created_at, has_pdf FROM policy_drafts WHERE (? = '' OR status = ?) AND (? = '' OR title LIKE ?) ORDER BY created_at DESC LIMIT 2000",
+  )
+    .bind(status, status, q, `%${q}%`)
+    .all<{ id: string; title: string | null }>();
+  let list = (rows.results || []).map((row) => {
+    const reason = junkTitleReason(row.title || "");
+    return { ...row, junk: Boolean(reason), junk_reason: reason || "" };
+  });
+  if (junkOnly) list = list.filter((row) => row.junk);
+  const total = list.length;
+  const drafts = list.slice((page - 1) * pageSize, page * pageSize);
+  return c.json({ drafts, total, page, page_size: pageSize });
+});
+
+adminRoutes.post("/admin/policy-drafts/bulk-reject", async (c) => {
+  const body = await readJson<{ ids?: string[]; junk?: boolean }>(c.req.raw);
+  let ids = (body?.ids || []).map((id) => String(id || "").trim()).filter(Boolean);
+  if (body?.junk) {
+    const rows = await c.env.DB.prepare("SELECT id, title FROM policy_drafts WHERE status = '待审核' ORDER BY created_at DESC LIMIT 2000").all<{ id: string; title: string | null }>();
+    ids = (rows.results || []).filter((row) => junkTitleReason(row.title || "")).map((row) => row.id);
+  }
+  if (!ids.length) return c.json({ rejected: 0 });
+  const now = nowIso();
+  const note = body?.junk ? "批量标记：疑似无效抓取" : "批量驳回";
+  let rejected = 0;
+  for (let i = 0; i < ids.length; i += 40) {
+    const chunk = ids.slice(i, i + 40);
+    const result = await c.env.DB.prepare(
+      `UPDATE policy_drafts SET status = '已驳回', review_note = ?, reviewed_by = ?, reviewed_at = ? WHERE status = '待审核' AND id IN (${chunk.map(() => "?").join(",")})`,
+    )
+      .bind(note, c.get("userId"), now, ...chunk)
+      .run();
+    rejected += Number(result.meta?.changes ?? chunk.length);
+  }
+  await audit(c.env.DB, c.get("userId"), "policy_draft.bulk_reject", "policy_draft", ids[0] || "batch", clientIp(c.req.raw), { rejected, junk: Boolean(body?.junk) });
+  return c.json({ rejected });
 });
 
 adminRoutes.get("/admin/policy-drafts/:id", async (c) => {
@@ -929,14 +1066,22 @@ adminRoutes.get("/admin/policy-drafts/:id", async (c) => {
 adminRoutes.patch("/admin/policy-drafts/:id", async (c) => {
   const body = await readJson<{ title?: string; suggested_definition_json?: unknown; review_note?: string }>(c.req.raw);
   if (!body) return c.json({ error: "无法读取" }, 400);
+  let storedRule: string | null = null;
+  let flags: string[] = [];
+  let dropped: string[] = [];
   if (body.suggested_definition_json) {
-    const parsed = parseRule(body.suggested_definition_json);
-    if (!parsed.rule) return c.json({ error: parsed.error }, 400);
+    const normalized = normalizeSuggestedRule(body.suggested_definition_json);
+    flags = normalized.flags;
+    dropped = normalized.dropped;
+    if (!normalized.rule) {
+      return c.json({ error: flags.join("；") || "规则未通过校验", flags, dropped }, 400);
+    }
+    storedRule = JSON.stringify(normalized.rule);
   }
   await c.env.DB.prepare("UPDATE policy_drafts SET title = COALESCE(?, title), suggested_definition_json = COALESCE(?, suggested_definition_json), review_note = COALESCE(?, review_note) WHERE id = ?")
-    .bind(body.title || null, body.suggested_definition_json ? JSON.stringify(body.suggested_definition_json) : null, body.review_note ?? null, c.req.param("id"))
+    .bind(body.title || null, storedRule, body.review_note ?? null, c.req.param("id"))
     .run();
-  return c.json({ ok: true });
+  return c.json({ ok: true, flags, dropped });
 });
 
 adminRoutes.post("/admin/policy-drafts/import", async (c) => {
@@ -959,32 +1104,41 @@ adminRoutes.post("/admin/policy-drafts/:id/adopt", async (c) => {
   const draft = await c.env.DB.prepare("SELECT * FROM policy_drafts WHERE id = ?").bind(c.req.param("id")).first<{
     id: string;
     title: string;
+    status: string;
     suggested_definition_json: string | null;
     match_policy_id: string | null;
   }>();
-  if (!draft?.suggested_definition_json) return c.json({ error: "草稿还没有规则 JSON，请先编辑" }, 400);
+  if (!draft) return c.json({ error: "草稿不存在" }, 404);
+  const blocked = adoptBlockedReason(draft.status);
+  if (blocked) return c.json({ error: blocked }, 409);
+  if (!draft.suggested_definition_json) return c.json({ error: "草稿还没有规则 JSON，请先编辑" }, 400);
   const parsed = parseRule(JSON.parse(draft.suggested_definition_json));
   if (!parsed.rule) return c.json({ error: parsed.error }, 400);
   const body = await readJson<{ policy_id?: string }>(c.req.raw);
   const now = nowIso();
   let policyId = body?.policy_id || draft.match_policy_id;
-  let versionId = uid();
-  if (!policyId) {
-    policyId = uid();
-    await c.env.DB.prepare("INSERT INTO policies (id, code, name, category, status, current_version, origin, created_at, updated_at) VALUES (?, ?, ?, ?, '草稿', 1, 'crawl', ?, ?)")
-      .bind(policyId, parsed.rule.code, parsed.rule.name, parsed.rule.category, now, now)
-      .run();
-    await c.env.DB.prepare("INSERT INTO policy_versions (id, policy_id, version, definition_json, basis, url, created_by, created_at) VALUES (?, ?, 1, ?, ?, ?, ?, ?)")
-      .bind(versionId, policyId, JSON.stringify(parsed.rule), parsed.rule.basis || "", parsed.rule.url || "", c.get("userId"), now)
-      .run();
-  } else {
-    const policy = await c.env.DB.prepare("SELECT current_version FROM policies WHERE id = ?").bind(policyId).first<{ current_version: number }>();
-    if (!policy) return c.json({ error: "要更新的政策不存在" }, 404);
-    const version = policy.current_version + 1;
-    await c.env.DB.prepare("UPDATE policies SET current_version = ?, name = ?, updated_at = ?, status = '草稿' WHERE id = ?").bind(version, parsed.rule.name, now, policyId).run();
-    await c.env.DB.prepare("INSERT INTO policy_versions (id, policy_id, version, definition_json, basis, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .bind(versionId, policyId, version, JSON.stringify(parsed.rule), parsed.rule.basis || "", c.get("userId"), now)
-      .run();
+  const versionId = uid();
+  try {
+    if (!policyId) {
+      policyId = uid();
+      await c.env.DB.prepare("INSERT INTO policies (id, code, name, category, status, current_version, origin, created_at, updated_at) VALUES (?, ?, ?, ?, '草稿', 1, 'crawl', ?, ?)")
+        .bind(policyId, parsed.rule.code, parsed.rule.name, parsed.rule.category, now, now)
+        .run();
+      await c.env.DB.prepare("INSERT INTO policy_versions (id, policy_id, version, definition_json, basis, url, created_by, created_at) VALUES (?, ?, 1, ?, ?, ?, ?, ?)")
+        .bind(versionId, policyId, JSON.stringify(parsed.rule), parsed.rule.basis || "", parsed.rule.url || "", c.get("userId"), now)
+        .run();
+    } else {
+      const policy = await c.env.DB.prepare("SELECT current_version FROM policies WHERE id = ?").bind(policyId).first<{ current_version: number }>();
+      if (!policy) return c.json({ error: "要更新的政策不存在" }, 404);
+      const version = policy.current_version + 1;
+      await c.env.DB.prepare("UPDATE policies SET current_version = ?, name = ?, updated_at = ?, status = '草稿' WHERE id = ?").bind(version, parsed.rule.name, now, policyId).run();
+      await c.env.DB.prepare("INSERT INTO policy_versions (id, policy_id, version, definition_json, basis, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+        .bind(versionId, policyId, version, JSON.stringify(parsed.rule), parsed.rule.basis || "", c.get("userId"), now)
+        .run();
+    }
+  } catch (err) {
+    if (String(err).toLowerCase().includes("unique")) return c.json({ error: "政策编码已存在" }, 409);
+    throw err;
   }
   await c.env.DB.prepare("UPDATE policy_drafts SET status = '已采纳', reviewed_by = ?, reviewed_at = ?, created_policy_version_id = ? WHERE id = ?")
     .bind(c.get("userId"), now, versionId, draft.id)
@@ -1006,8 +1160,9 @@ adminRoutes.post("/admin/policy-drafts/:id/reject", async (c) => {
 
 adminRoutes.get("/admin/audit", async (c) => {
   if (!adminOnly(c.get("role"))) return c.json({ error: "只有管理员可以看审计日志" }, 403);
-  const rows = await c.env.DB.prepare("SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 200").all();
-  return c.json({ logs: rows.results || [] });
+  const rows = await c.env.DB.prepare("SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 200").all<AuditRow>();
+  const logs = await decorateAudit(c.env.DB, rows.results || []);
+  return c.json({ logs });
 });
 
 adminRoutes.get("/admin/regions", async (c) => {
@@ -1018,5 +1173,84 @@ adminRoutes.get("/admin/regions", async (c) => {
 void hitLimit;
 void profileMap;
 
-/** 1×1 合成 PNG，只用于「测试连接」时给视觉模型一个最小图片，不是真实申报表。 */
-const SAMPLE_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+interface AuditRow {
+  id: string;
+  action: string;
+  target_type: string | null;
+  target_id: string | null;
+  created_at: string;
+}
+
+const AUDIT_TYPE_LABEL: Record<string, string> = {
+  enterprise: "企业",
+  policy: "政策",
+  user: "账号",
+  policy_draft: "草稿",
+  ai_provider: "模型",
+  file: "文件",
+  assessment: "方案",
+  crawl_run: "抓取记录",
+  settings: "系统设置",
+  appointment: "预约",
+  policy_deal: "政策成交",
+  fde_deal: "FDE 成交",
+};
+
+async function nameMap(db: D1Database, sql: string, ids: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  const unique = [...new Set(ids)].filter(Boolean).slice(0, 80);
+  if (!unique.length) return map;
+  const rows = await db.prepare(sql.replace("?", unique.map(() => "?").join(","))).bind(...unique).all<{ id: string; name: string | null }>();
+  for (const row of rows.results || []) if (row.name) map.set(row.id, row.name);
+  return map;
+}
+
+async function decorateAudit(db: D1Database, logs: AuditRow[]) {
+  const ids = (type: string) => logs.filter((log) => log.target_type === type && log.target_id).map((log) => log.target_id as string);
+  const [enterprises, policies, users, drafts, providers, files, assessments, deals, fde, appointments, runs] = await Promise.all([
+    nameMap(db, "SELECT id, name FROM enterprises WHERE id IN (?)", ids("enterprise")),
+    nameMap(db, "SELECT id, name FROM policies WHERE id IN (?)", ids("policy")),
+    nameMap(db, "SELECT id, name FROM users WHERE id IN (?)", ids("user")),
+    nameMap(db, "SELECT id, title AS name FROM policy_drafts WHERE id IN (?)", ids("policy_draft")),
+    nameMap(db, "SELECT id, name FROM ai_providers WHERE id IN (?)", ids("ai_provider")),
+    nameMap(db, "SELECT id, filename AS name FROM files WHERE id IN (?)", ids("file")),
+    nameMap(db, "SELECT a.id, e.name FROM assessments a JOIN enterprises e ON e.id = a.enterprise_id WHERE a.id IN (?)", ids("assessment")),
+    nameMap(db, "SELECT d.id, e.name FROM policy_deals d JOIN enterprises e ON e.id = d.enterprise_id WHERE d.id IN (?)", ids("policy_deal")),
+    nameMap(db, "SELECT d.id, e.name FROM fde_deals d JOIN enterprises e ON e.id = d.enterprise_id WHERE d.id IN (?)", ids("fde_deal")),
+    nameMap(db, "SELECT a.id, e.name FROM appointments a JOIN enterprises e ON e.id = a.enterprise_id WHERE a.id IN (?)", ids("appointment")),
+    nameMap(db, "SELECT id, json_extract(errors_json, '$.source_name') AS name FROM crawl_runs WHERE id IN (?)", ids("crawl_run")),
+  ]);
+  const maps: Record<string, Map<string, string>> = {
+    enterprise: enterprises,
+    policy: policies,
+    user: users,
+    policy_draft: drafts,
+    ai_provider: providers,
+    file: files,
+    assessment: assessments,
+    policy_deal: deals,
+    fde_deal: fde,
+    appointment: appointments,
+    crawl_run: runs,
+  };
+  return logs.map((log) => {
+    const type = log.target_type || "";
+    const id = log.target_id || "";
+    const named = maps[type]?.get(id) || "";
+    let targetName = named;
+    if (!targetName && (id === "settings" || type === "settings")) targetName = "系统设置";
+    if (!targetName && id === "batch") targetName = "一批文件";
+    if (!targetName) targetName = AUDIT_TYPE_LABEL[type] || "记录";
+    if (/^[0-9a-f-]{32,}$/i.test(targetName)) targetName = AUDIT_TYPE_LABEL[type] || "记录";
+    return { ...log, action_label: auditActionLabel(log.action), target_name: targetName };
+  });
+}
+
+function resolveBaseUrl(vendor: string, base: unknown): { url: string } | { error: string } {
+  const trimmed = String(base || "").trim();
+  const url = trimmed || (vendor === "custom" ? "" : VENDORS[vendor] || "");
+  if (vendor === "custom" && !/^https?:\/\//i.test(url)) return { error: "自定义厂商需要填写以 http:// 或 https:// 开头的 Base URL" };
+  if (!/^https?:\/\//i.test(url)) return { error: "Base URL 需要以 http:// 或 https:// 开头" };
+  return { url };
+}
+

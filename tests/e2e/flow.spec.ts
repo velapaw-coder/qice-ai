@@ -85,12 +85,26 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
   expect(agreeMeta.user_id).toBe(agreed?.actor_id);
   await adminPage.goto("/admin/policies");
   await expect(adminPage.getByTestId("enable-APPRENTICE_SUBSIDY")).toBeVisible();
-  const codes = await adminPage.locator("[data-testid^='enable-']").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-testid") || ""));
-  expect(codes.length).toBeGreaterThan(7);
-  for (const id of codes) {
-    await adminPage.getByTestId(id).click();
-    await expect(adminPage.getByTestId(id)).toHaveCount(0);
+  const enabled: string[] = [];
+  for (let guard = 0; guard < 6; guard += 1) {
+    await expect(adminPage.getByTestId("policy-page")).toContainText(`第 ${guard + 1} /`);
+    const codes = await adminPage.locator("[data-testid^='enable-']").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-testid") || ""));
+    if (guard === 0) expect(codes.length).toBeGreaterThan(7);
+    for (const id of codes) {
+      await adminPage.getByTestId(id).click();
+      await expect(adminPage.getByTestId(id)).toHaveCount(0);
+      enabled.push(id);
+    }
+    const next = adminPage.getByTestId("policy-next");
+    if (await next.isDisabled()) break;
+    const firstRow = await adminPage.locator("tbody tr").first().innerText();
+    await Promise.all([
+      adminPage.waitForResponse((res) => res.url().includes("/api/admin/policies?") && res.url().includes(`page=${guard + 2}`)),
+      next.click(),
+    ]);
+    await expect(adminPage.locator("tbody tr").first()).not.toHaveText(firstRow);
   }
+  expect(enabled.length).toBeGreaterThan(7);
   await adminPage.goto("/admin/ai-settings");
   await expect(adminPage.getByTestId("ai-settings")).toBeVisible();
   await expect(adminPage.getByTestId("vendor")).toBeVisible();
@@ -126,6 +140,8 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
   await consultantPage.getByRole("link", { name: "深圳爱华国际教育科技有限公司" }).first().click();
   await expect(consultantPage.getByTestId("admin-review")).toBeVisible();
   await consultantPage.getByTestId("industry").fill("教育");
+  await expect(consultantPage.getByTestId("established")).toHaveValue("");
+  await expect(consultantPage.getByTestId("established-state")).toHaveText("待识别");
   await consultantPage.getByTestId("established").fill("2014-01-01");
   await consultantPage.getByTestId("capital").fill("1000000");
   await consultantPage.getByTestId("dishonest").selectOption("false");

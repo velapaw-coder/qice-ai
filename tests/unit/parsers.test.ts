@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { buildProfile } from "@shared/profile";
+import { textFromPdfItems } from "@shared/parsers/pdfText";
 import { assertNoSecrets, makeChineseId, parseMatrices, parseVatText, type SheetMatrix } from "@shared/parsers/tabular";
 import { isValidUscc, makeUscc } from "@shared/uscc";
 import * as XLSX from "xlsx";
@@ -62,6 +63,44 @@ describe("表格解析", () => {
     expect(vat.periods).toHaveLength(4);
     expect(vat.uscc).toBe(uscc);
     expect(vat.company_name).toContain("爱华");
+  });
+
+  it("单空格、同一行和中文所属期也能读到期次", () => {
+    const spaced = parseVatText([
+      "纳税人名称：深圳爱华国际教育科技有限公司",
+      `纳税人识别号：${uscc}`,
+      "所属期起 所属期止 销售额 应纳税额 附加税费",
+      "2025-10-01 2025-12-31 600000 18000 2160",
+    ].join("\n"));
+    expect(spaced.periods?.[0]).toMatchObject({ start: "2025-10-01", end: "2025-12-31", sales: 600000, vat_payable: 18000, surtax: 2160 });
+    expect(spaced.parse_note).not.toContain("没有读到期次数据");
+
+    const pipes = parseVatText("所属期起|所属期止|销售额|应纳税额|附加税费\n2026-01-01|2026-03-31|1200|36|4");
+    expect(pipes.periods?.[0]?.sales).toBe(1200);
+
+    const flat = parseVatText(`纳税人名称：深圳爱华国际教育科技有限公司 纳税人识别号：${uscc} 所属期起 所属期止 销售额 2025-04-01 2025-06-30 800 24`);
+    expect(flat.periods?.some((period) => period.start === "2025-04-01" && period.sales === 800)).toBe(true);
+
+    const chinese = parseVatText("税款所属期起：2025年10月1日 税款所属期止：2025年12月31日\n2025年10月1日至2025年12月31日 销售额：600,000.00 应纳税额：18,000");
+    expect(chinese.periods?.some((period) => period.start === "2025-10-01" && period.end === "2025-12-31")).toBe(true);
+    expect(chinese.uscc).toBeUndefined();
+    expect(parseVatText(`纳税人识别号：${uscc}`).uscc).toBe(uscc);
+  });
+
+  it("合成增值税 PDF 文本层能还原四个所属期", async () => {
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const data = new Uint8Array(readFileSync(new URL("../../fixtures/fake/爱华-增值税申报表-合成.pdf", import.meta.url)));
+    const doc = await pdfjs.getDocument({ data, disableWorker: true, isEvalSupported: false } as Parameters<typeof pdfjs.getDocument>[0]).promise;
+    const page = await doc.getPage(1);
+    const content = await page.getTextContent();
+    const text = textFromPdfItems(content.items as { str?: string; transform?: number[] }[]);
+    const vat = parseVatText(text);
+    expect(text).toContain(uscc);
+    expect(text).toContain("2025-10-01");
+    expect(vat.periods).toHaveLength(4);
+    expect(vat.periods?.reduce((sum, period) => sum + (period.sales || 0), 0)).toBe(2_400_000);
+    expect(vat.parse_note).not.toContain("没有读到期次数据");
+    expect(vat.uscc).toBe(uscc);
   });
 
   it("个体户资料进入暂不支持画像", () => {

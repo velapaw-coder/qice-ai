@@ -4,7 +4,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, StandardFonts } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import * as XLSX from "xlsx";
 
@@ -169,6 +169,7 @@ const pdf = await PDFDocument.create();
 pdf.registerFontkit(fontkit);
 const fontBytes = readFileSync("/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf");
 const font = await pdf.embedFont(fontBytes, { subset: true });
+const latin = await pdf.embedFont(StandardFonts.Helvetica);
 const page = pdf.addPage([595, 842]);
 const lines = [
   "增值税及附加税费申报表（一般纳税人适用）",
@@ -180,8 +181,17 @@ const lines = [
   "所属期起    所属期止    销售额    应纳税额    附加税费",
   ...quarters.map(([start, end]) => `${start}    ${end}    600000    18000    2160`),
 ];
+function drawMixed(target, line, x, y, size) {
+  const parts = line.match(/[\u0000-\u00ff]+|[^\u0000-\u00ff]+/g) || [];
+  let cursor = x;
+  for (const part of parts) {
+    const face = /[^\u0000-\u00ff]/.test(part) ? font : latin;
+    target.drawText(part, { x: cursor, y, size, font: face });
+    cursor += face.widthOfTextAtSize(part, size);
+  }
+}
 lines.forEach((line, index) => {
-  page.drawText(line, { x: 36, y: 800 - index * 22, size: 11, font });
+  drawMixed(page, line, 36, 800 - index * 22, 11);
 });
 writeFileSync(join(outDir, "爱华-增值税申报表-合成.pdf"), await pdf.save());
 

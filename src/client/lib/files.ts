@@ -1,5 +1,6 @@
 import type { Extraction } from "@shared/parsers/tabular";
 import { parseSsText, parseVatText } from "@shared/parsers/tabular";
+import { textFromPdfItems } from "@shared/parsers/pdfText";
 
 export function parseSpreadsheet(file: File): Promise<Extraction> {
   return new Promise(async (resolve, reject) => {
@@ -57,21 +58,21 @@ export async function maybeConvertHeic(file: File): Promise<File | Blob> {
   return Array.isArray(converted) ? converted[0]! : converted;
 }
 
-export async function readPdf(file: File): Promise<{ text: string; pages: Blob[] }> {
+export async function readPdf(file: File): Promise<{ text: string; pages: Blob[]; renderPages: () => Promise<Blob[]> }> {
   const pdfjs = await import("pdfjs-dist");
   const workerSrc = (await import("pdfjs-dist/build/pdf.worker.min.mjs?url")).default;
   pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
   const data = new Uint8Array(await file.arrayBuffer());
   const doc = await pdfjs.getDocument({ data }).promise;
   let text = "";
-  const pages: Blob[] = [];
   const limit = Math.min(doc.numPages, 20);
   for (let i = 1; i <= limit; i++) {
     const page = await doc.getPage(i);
     const content = await page.getTextContent();
-    text += content.items.map((item) => ("str" in item ? item.str : "")).join(" ") + "\n";
+    text += `${textFromPdfItems(content.items as { str?: string; transform?: number[] }[])}\n`;
   }
-  if (text.replace(/\s/g, "").length < 20) {
+  const renderPages = async () => {
+    const rendered: Blob[] = [];
     for (let i = 1; i <= limit; i++) {
       const page = await doc.getPage(i);
       const viewport = page.getViewport({ scale: 1.4 });
@@ -83,10 +84,18 @@ export async function readPdf(file: File): Promise<{ text: string; pages: Blob[]
       const ctx = canvas.getContext("2d");
       if (!ctx) break;
       await page.render({ canvasContext: ctx, viewport: page.getViewport({ scale: 1.4 * scaleDown }) }).promise;
-      pages.push(await toJpeg(canvas, 0.8));
+      rendered.push(await toJpeg(canvas, 0.8));
     }
-  }
-  return { text, pages };
+    return rendered;
+  };
+  const pages = text.replace(/\s/g, "").length < 20 ? await renderPages() : [];
+  return { text, pages, renderPages };
+}
+
+export function textExtractionUseful(kind: "vat" | "social_security", extraction: Extraction | null): boolean {
+  if (!extraction) return false;
+  if (kind === "social_security") return typeof extraction.headcount === "number";
+  return (extraction.periods || []).some((period) => Boolean(period.start) || period.sales !== undefined || period.vat_payable !== undefined);
 }
 
 export function extractionFromPdfText(text: string, filename: string): Extraction {

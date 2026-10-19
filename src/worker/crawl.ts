@@ -1,10 +1,12 @@
+import { applyModelSuggestion, POLICY_EXTRACTION_PROMPT } from "../shared/rules/suggest";
+import { crawlRunIsStale, extractMainText, extractPolicyLinks, junkTitleReason, pageLooksLikePolicy } from "../shared/policyPage";
 import { uid, nowIso, type Env } from "./util";
 import { setting } from "./util";
 import { decryptSecret } from "./crypto";
 
 export type CrawlMessage =
   | { kind: "list"; runId: string; sourceId: string; page: number }
-  | { kind: "detail"; runId: string; sourceId: string; url: string };
+  | { kind: "detail"; runId: string; sourceId: string; url: string; title?: string };
 
 const UA = "QiceAIPolicyBot/1.0 (+https://qice.local/legal/privacy; policy research)";
 
@@ -19,20 +21,71 @@ interface SourceRow {
   consecutive_failures: number;
 }
 
-async function bump(db: D1Database, runId: string, fields: Record<string, number>, done = false): Promise<void> {
-  const sets = Object.entries(fields).map(([k]) => `${k} = ${k} + ?`);
-  const values = Object.values(fields);
-  sets.push("pending = CASE WHEN pending > 0 THEN pending - 1 ELSE 0 END");
-  if (done) sets.push("finished_at = ?", "status = '完成'");
+async function settle(db: D1Database, runId: string, fields: Record<string, number>, note?: string): Promise<void> {
+  const names = ["sources_ok", "sources_failed", "drafts_created", "duplicates", "ignored"] as const;
+  const deltas = names.map((name) => fields[name] || 0);
+  const now = nowIso();
   await db
-    .prepare(`UPDATE crawl_runs SET ${sets.join(", ")} WHERE id = ?`)
-    .bind(...values, ...(done ? [nowIso()] : []), runId)
+    .prepare(
+      `UPDATE crawl_runs SET
+        sources_ok = sources_ok + ?,
+        sources_failed = sources_failed + ?,
+        drafts_created = drafts_created + ?,
+        duplicates = duplicates + ?,
+        ignored = ignored + ?,
+        pending = CASE WHEN pending > 0 THEN pending - 1 ELSE 0 END,
+        status = CASE
+          WHEN pending <= 1 THEN CASE
+            WHEN drafts_created + ? = 0 AND sources_ok + ? = 0 AND sources_failed + ? > 0 THEN '失败'
+            ELSE '完成' END
+          ELSE status END,
+        finished_at = CASE WHEN pending <= 1 THEN COALESCE(finished_at, ?) ELSE finished_at END
+       WHERE id = ?`,
+    )
+    .bind(...deltas, deltas[2], deltas[0], deltas[1], now, runId)
     .run();
-  if (!done) {
-    const row = await db.prepare("SELECT pending FROM crawl_runs WHERE id = ?").bind(runId).first<{ pending: number }>();
-    if (row && row.pending <= 0) {
-      await db.prepare("UPDATE crawl_runs SET status = '完成', finished_at = ? WHERE id = ? AND status = '进行中'").bind(nowIso(), runId).run();
+  if (!note) return;
+  const row = await db.prepare("SELECT errors_json FROM crawl_runs WHERE id = ?").bind(runId).first<{ errors_json: string }>();
+  let meta: { source_id?: string; source_name?: string; notes?: string[] } = {};
+  try {
+    const parsed = JSON.parse(row?.errors_json || "{}") as { source_id?: string; source_name?: string; notes?: string[] } | unknown[];
+    if (parsed && !Array.isArray(parsed)) meta = parsed;
+  } catch {
+    meta = {};
+  }
+  meta.notes = [...(meta.notes || []), note].slice(-8);
+  await db.prepare("UPDATE crawl_runs SET errors_json = ? WHERE id = ?").bind(JSON.stringify(meta), runId).run();
+}
+
+export async function closeStaleCrawlRuns(db: D1Database, nowMs = Date.now()): Promise<void> {
+  const now = new Date(nowMs).toISOString();
+  await db
+    .prepare(
+      `UPDATE crawl_runs SET
+        status = CASE WHEN drafts_created = 0 AND sources_ok = 0 AND sources_failed > 0 THEN '失败' ELSE '完成' END,
+        finished_at = COALESCE(finished_at, ?),
+        pending = 0
+       WHERE status = '进行中' AND pending <= 0`,
+    )
+    .bind(now)
+    .run();
+  const stuck = await db
+    .prepare("SELECT id, started_at, errors_json FROM crawl_runs WHERE status = '进行中'")
+    .all<{ id: string; started_at: string; errors_json: string }>();
+  for (const run of stuck.results || []) {
+    if (!crawlRunIsStale(run.started_at, nowMs)) continue;
+    let meta: { source_id?: string; source_name?: string; notes?: string[] } = {};
+    try {
+      const parsed = JSON.parse(run.errors_json || "{}") as { notes?: string[] } | unknown[];
+      if (parsed && !Array.isArray(parsed)) meta = parsed;
+    } catch {
+      meta = {};
     }
+    meta.notes = [...(meta.notes || []), "超过 30 分钟仍未结束，已标记失败"].slice(-8);
+    await db
+      .prepare("UPDATE crawl_runs SET status = '失败', finished_at = ?, pending = 0, errors_json = ? WHERE id = ? AND status = '进行中'")
+      .bind(now, JSON.stringify(meta), run.id)
+      .run();
   }
 }
 
@@ -73,40 +126,6 @@ async function fetchText(url: string, limit: number): Promise<{ ok: boolean; sta
   return { ok: true, status: res.status, text: text.slice(0, limit), contentType };
 }
 
-/** HTMLRewriter only emits while the response body is consumed. */
-async function rewriteHtml(html: string, base: string, prefix: string): Promise<{ text: string; links: string[] }> {
-  const links: string[] = [];
-  let text = "";
-  const res = new HTMLRewriter()
-    .on("script, style, noscript", {
-      element(el) {
-        el.remove();
-      },
-    })
-    .on("a", {
-      element(el) {
-        if (links.length >= 40 || !prefix) return;
-        const href = el.getAttribute("href");
-        if (!href) return;
-        try {
-          const abs = new URL(href, base).href.split("#")[0]!;
-          if (abs.startsWith(prefix) && !links.includes(abs)) links.push(abs);
-        } catch {
-          /* ignore */
-        }
-      },
-    })
-    .on("*", {
-      text(node) {
-        if (text.length >= 60_000) return;
-        const t = node.text.trim();
-        if (t) text += `${t}\n`;
-      },
-    })
-    .transform(new Response(html));
-  await res.text();
-  return { text: text.slice(0, 60_000), links };
-}
 
 function pageUrl(listUrl: string, page: number): string {
   if (page <= 1) return listUrl;
@@ -125,14 +144,21 @@ async function draftFromText(env: Env, opts: {
   sourceId: string | null;
   url: string;
   text: string;
+  title?: string;
   hasPdf?: boolean;
+  skipJunk?: boolean;
 }): Promise<"created" | "duplicate" | "ignored"> {
+  const proposed = (opts.title && !junkTitleReason(opts.title) ? opts.title : "")
+    || opts.text.split("\n").map((line) => line.trim()).find((line) => line && !junkTitleReason(line))
+    || opts.title
+    || "";
+  if (opts.skipJunk && !pageLooksLikePolicy(proposed, opts.text)) return "ignored";
   const urlNorm = opts.url.split("#")[0]!;
   const hash = await sha(opts.text.slice(0, 60_000));
   const dup = await env.DB.prepare(
-    "SELECT id FROM policy_drafts WHERE url_norm = ? OR content_hash = ? LIMIT 1",
+    "SELECT id FROM policy_drafts WHERE url_norm = ? OR content_hash = ? OR (source_id = ? AND title = ? AND title != '') LIMIT 1",
   )
-    .bind(urlNorm, hash)
+    .bind(urlNorm, hash, opts.sourceId || "", proposed.slice(0, 200))
     .first();
   if (dup) return "duplicate";
   const id = uid();
@@ -145,13 +171,15 @@ async function draftFromText(env: Env, opts: {
   let confidence: unknown = null;
   const llm = await callPolicyModel(env, opts.text.slice(0, 30_000));
   if (llm) {
-    extracted = llm;
+    const applied = applyModelSuggestion(llm);
+    extracted = applied.extracted;
     relevance = llm.relevant === false ? "忽略" : "相关";
     ignore = String(llm.ignore_reason || "");
-    definition = llm.definition_json || null;
-    confidence = llm.confidence || null;
+    definition = applied.rule;
+    confidence = applied.confidence;
   }
   const status = relevance === "忽略" ? "已忽略" : "待审核";
+  const title = String((opts.title && !junkTitleReason(opts.title) ? opts.title : "") || llm?.name || proposed || "未命名政策").slice(0, 200);
   await env.DB.prepare(
     `INSERT INTO policy_drafts (id, crawl_run_id, source_id, source_url, url_norm, title, doc_no, issuer, content_hash, raw_text_r2_key, relevance, ignore_reason, extracted_json, suggested_definition_json, confidence_json, has_pdf, status, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -162,7 +190,7 @@ async function draftFromText(env: Env, opts: {
       opts.sourceId,
       opts.url,
       urlNorm,
-      String(llm?.name || opts.text.split("\n").find((l) => l.trim()) || "未命名政策").slice(0, 200),
+      title,
       String(llm?.doc_no || ""),
       String(llm?.issuer || ""),
       hash,
@@ -197,8 +225,7 @@ async function callPolicyModel(env: Env, text: string): Promise<Record<string, u
   } catch {
     return null;
   }
-  const prompt =
-    "你是政策研究员。只输出 JSON，字段：relevant(boolean), ignore_reason, name, doc_no, issuer, region, entity, category, hard(string[]), soft(string[]), effective_from, effective_to, confidence(0-1), definition_json。不要输出原文中的个人信息。";
+  const prompt = `${POLICY_EXTRACTION_PROMPT} 不要输出原文中的个人信息。`;
   const body = {
     model: row.model,
     messages: [
@@ -232,104 +259,134 @@ export async function handleQueue(batch: MessageBatch<CrawlMessage>, env: Env): 
   for (const msg of batch.messages) {
     try {
       await handleMessage(msg.body, env);
-      msg.ack();
     } catch (err) {
       console.log(JSON.stringify({ level: "error", msg: "crawl_failed", error: String(err) }));
-      msg.retry();
+      try {
+        await settle(env.DB, msg.body.runId, { sources_failed: 1 }, String(err).slice(0, 180));
+      } catch {
+        /* 计数失败也不能让队列一直重试 */
+      }
     }
+    msg.ack();
   }
 }
 
 async function handleMessage(body: CrawlMessage, env: Env): Promise<void> {
-  if (body.kind === "detail" && body.sourceId === "paste") {
+  let settled = false;
+  const finish = async (fields: Record<string, number>, note?: string) => {
+    if (settled) return;
+    settled = true;
+    await settle(env.DB, body.runId, fields, note);
+  };
+  try {
+    if (body.kind === "detail" && body.sourceId === "paste") {
+      const page = await fetchText(body.url, 80_000);
+      if (!page.ok) {
+        await finish({ sources_failed: 1 }, `页面 ${page.status}`);
+        return;
+      }
+      const extracted = extractMainText(page.text);
+      const result = await draftFromText(env, { runId: body.runId, sourceId: null, url: body.url, text: extracted.text || page.text, title: extracted.title });
+      await finish(result === "created" ? { drafts_created: 1 } : result === "duplicate" ? { duplicates: 1 } : { ignored: 1 });
+      return;
+    }
+    const source = await env.DB.prepare("SELECT * FROM policy_sources WHERE id = ?").bind(body.sourceId).first<SourceRow>();
+    if (!source) {
+      await finish({ sources_failed: 1 }, "来源不存在");
+      return;
+    }
+    if (body.kind === "list") {
+      const url = pageUrl(source.list_url, body.page);
+      if (body.page === 1) {
+        try {
+          const robots = await fetchText(new URL("/robots.txt", url).href, 8_000);
+          if (robots.ok && robotsBlocks(robots.text)) {
+            await env.DB.prepare("UPDATE policy_sources SET last_status = ?, consecutive_failures = consecutive_failures + 1, last_crawled_at = ? WHERE id = ?")
+              .bind("robots 禁止", nowIso(), source.id)
+              .run();
+            await finish({ sources_failed: 1 }, "robots 禁止");
+            return;
+          }
+        } catch {
+          /* robots 失败不阻断 */
+        }
+      }
+      const page = await fetchText(url, 80_000);
+      if (!page.ok) {
+        await env.DB.prepare("UPDATE policy_sources SET last_status = ?, consecutive_failures = consecutive_failures + 1, last_crawled_at = ? WHERE id = ?")
+          .bind(`列表页 ${page.status}`, nowIso(), source.id)
+          .run();
+        await finish({ sources_failed: 1 }, `列表页 ${page.status}`);
+        return;
+      }
+      const links = extractPolicyLinks(page.text, url, source.link_pattern || "");
+      await env.DB.prepare("UPDATE policy_sources SET last_status = ?, consecutive_failures = 0, last_crawled_at = ? WHERE id = ?")
+        .bind(`文章 ${links.length}`, nowIso(), source.id)
+        .run();
+      if (links.length) {
+        await env.DB.prepare("UPDATE crawl_runs SET pending = pending + ?, items_found = items_found + ? WHERE id = ?").bind(links.length, links.length, body.runId).run();
+        for (const link of links) {
+          await env.CRAWL_QUEUE.send({ kind: "detail", runId: body.runId, sourceId: source.id, url: link.url, title: link.title } satisfies CrawlMessage, { delaySeconds: 2 });
+        }
+      }
+      if (body.page < source.max_pages && links.length) {
+        await env.DB.prepare("UPDATE crawl_runs SET pending = pending + 1 WHERE id = ?").bind(body.runId).run();
+        await env.CRAWL_QUEUE.send({ kind: "list", runId: body.runId, sourceId: source.id, page: body.page + 1 } satisfies CrawlMessage, { delaySeconds: 2 });
+      }
+      await finish({ sources_ok: body.page === 1 ? 1 : 0 });
+      return;
+    }
     const page = await fetchText(body.url, 80_000);
     if (!page.ok) {
-      await bump(env.DB, body.runId, { sources_failed: 1 });
+      await finish({ sources_failed: 1 }, `文章 ${page.status}`);
       return;
     }
-    const { text } = await rewriteHtml(page.text, body.url, "https://");
-    const result = await draftFromText(env, { runId: body.runId, sourceId: null, url: body.url, text });
-    await bump(env.DB, body.runId, result === "created" ? { drafts_created: 1 } : result === "duplicate" ? { duplicates: 1 } : { ignored: 1 });
-    return;
-  }
-  const source = await env.DB.prepare("SELECT * FROM policy_sources WHERE id = ?").bind(body.sourceId).first<SourceRow>();
-  if (!source) {
-    await bump(env.DB, body.runId, { sources_failed: 1 });
-    return;
-  }
-  if (body.kind === "list") {
-    const url = pageUrl(source.list_url, body.page);
-    if (body.page === 1) {
-      try {
-        const robots = await fetchText(new URL("/robots.txt", url).href, 8_000);
-        if (robots.ok && robotsBlocks(robots.text)) {
-          await env.DB.prepare("UPDATE policy_sources SET last_status = ?, consecutive_failures = consecutive_failures + 1, last_crawled_at = ? WHERE id = ?")
-            .bind("robots 禁止", nowIso(), source.id)
-            .run();
-          await bump(env.DB, body.runId, { sources_failed: 1 });
-          return;
-        }
-      } catch {
-        /* robots 失败不阻断 */
-      }
-    }
-    const page = await fetchText(url, 80_000);
-    if (!page.ok) {
-      await env.DB.prepare("UPDATE policy_sources SET last_status = ?, consecutive_failures = consecutive_failures + 1, last_crawled_at = ? WHERE id = ?")
-        .bind(`列表页 ${page.status}`, nowIso(), source.id)
-        .run();
-      await bump(env.DB, body.runId, { sources_failed: 1 });
+    const isPdf = page.contentType.includes("pdf") || body.url.toLowerCase().endsWith(".pdf");
+    if (isPdf) {
+      const result = await draftFromText(env, {
+        runId: body.runId,
+        sourceId: source.id,
+        url: body.url,
+        title: body.title,
+        text: "含 PDF 附件，请顾问用粘贴导入补全文。",
+        hasPdf: true,
+        skipJunk: !body.title,
+      });
+      await finish(result === "created" ? { drafts_created: 1 } : result === "duplicate" ? { duplicates: 1 } : { ignored: 1 });
       return;
     }
-    const { links } = await rewriteHtml(page.text, url, source.link_pattern || "");
-    await env.DB.prepare("UPDATE policy_sources SET last_status = ?, consecutive_failures = 0, last_crawled_at = ? WHERE id = ?")
-      .bind(`链接 ${links.length}`, nowIso(), source.id)
-      .run();
-    if (links.length) {
-      await env.DB.prepare("UPDATE crawl_runs SET pending = pending + ?, items_found = items_found + ? WHERE id = ?").bind(links.length, links.length, body.runId).run();
-      for (const link of links) {
-        await env.CRAWL_QUEUE.send({ kind: "detail", runId: body.runId, sourceId: source.id, url: link } satisfies CrawlMessage, { delaySeconds: 2 });
-      }
-    }
-    if (body.page < source.max_pages && links.length) {
-      await env.DB.prepare("UPDATE crawl_runs SET pending = pending + 1 WHERE id = ?").bind(body.runId).run();
-      await env.CRAWL_QUEUE.send({ kind: "list", runId: body.runId, sourceId: source.id, page: body.page + 1 } satisfies CrawlMessage, { delaySeconds: 2 });
-    }
-    await bump(env.DB, body.runId, { sources_ok: body.page === 1 ? 1 : 0 });
-    return;
+    const extracted = extractMainText(page.text);
+    const result = await draftFromText(env, {
+      runId: body.runId,
+      sourceId: source.id,
+      url: body.url,
+      text: extracted.text,
+      title: body.title || extracted.title,
+      skipJunk: true,
+    });
+    await finish(result === "created" ? { drafts_created: 1 } : result === "duplicate" ? { duplicates: 1 } : { ignored: 1 });
+  } catch (err) {
+    await finish({ sources_failed: 1 }, String(err).slice(0, 180));
   }
-  const page = await fetchText(body.url, 80_000);
-  if (!page.ok) {
-    await bump(env.DB, body.runId, { sources_failed: 1 });
-    return;
-  }
-  const isPdf = page.contentType.includes("pdf") || body.url.toLowerCase().endsWith(".pdf");
-  if (isPdf) {
-    const result = await draftFromText(env, { runId: body.runId, sourceId: source.id, url: body.url, text: "含 PDF 附件，请顾问用粘贴导入补全文。", hasPdf: true });
-    await bump(env.DB, body.runId, result === "created" ? { drafts_created: 1 } : result === "duplicate" ? { duplicates: 1 } : { ignored: 1 });
-    return;
-  }
-  const { text } = await rewriteHtml(page.text, body.url, source.link_pattern || "https://");
-  const result = await draftFromText(env, { runId: body.runId, sourceId: source.id, url: body.url, text });
-  await bump(env.DB, body.runId, result === "created" ? { drafts_created: 1 } : result === "duplicate" ? { duplicates: 1 } : { ignored: 1 });
 }
 
 export async function enqueueCrawl(env: Env, type: string, actorId: string | null, sourceId?: string): Promise<string> {
   const runId = uid();
   const sources = sourceId
-    ? await env.DB.prepare("SELECT id FROM policy_sources WHERE id = ?").bind(sourceId).all<{ id: string }>()
-    : await env.DB.prepare("SELECT id FROM policy_sources WHERE enabled = 1").all<{ id: string }>();
-  const ids = (sources.results || []).map((s) => s.id);
+    ? await env.DB.prepare("SELECT id, name FROM policy_sources WHERE id = ?").bind(sourceId).all<{ id: string; name: string }>()
+    : await env.DB.prepare("SELECT id, name FROM policy_sources WHERE enabled = 1").all<{ id: string; name: string }>();
+  const rows = sources.results || [];
+  const sourceName = sourceId ? rows[0]?.name || "指定来源" : "全部已启用来源";
   await env.DB.prepare(
-    "INSERT INTO crawl_runs (id, type, triggered_by, started_at, status, pending) VALUES (?, ?, ?, ?, '进行中', ?)",
+    "INSERT INTO crawl_runs (id, type, triggered_by, started_at, status, pending, errors_json) VALUES (?, ?, ?, ?, '进行中', ?, ?)",
   )
-    .bind(runId, type, actorId, nowIso(), ids.length)
+    .bind(runId, type, actorId, nowIso(), rows.length, JSON.stringify({ source_id: sourceId || "", source_name: sourceName, notes: [] }))
     .run();
-  for (const id of ids) {
-    await env.CRAWL_QUEUE.send({ kind: "list", runId, sourceId: id, page: 1 } satisfies CrawlMessage);
+  for (const row of rows) {
+    await env.CRAWL_QUEUE.send({ kind: "list", runId, sourceId: row.id, page: 1 } satisfies CrawlMessage);
   }
-  if (!ids.length) {
-    await env.DB.prepare("UPDATE crawl_runs SET status = '完成', finished_at = ? WHERE id = ?").bind(nowIso(), runId).run();
+  if (!rows.length) {
+    await env.DB.prepare("UPDATE crawl_runs SET status = '完成', finished_at = ?, pending = 0 WHERE id = ?").bind(nowIso(), runId).run();
   }
   return runId;
 }
