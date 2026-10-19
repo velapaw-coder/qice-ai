@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useState, type FormEvent, type MouseEvent } from "react";
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { zipSync } from "fflate";
+import { MODEL_SLOT_KEYS } from "@shared/modelSlots";
+import { adoptBlockedReason } from "@shared/policyDraft";
 import { deriveClientKey } from "@shared/password";
 import { formatPublicBand, parseBands, validateBands, type EstimateBand } from "@shared/bands";
 import { formatRange } from "@shared/rules/evaluate";
@@ -249,6 +251,46 @@ function EnterpriseList() {
   );
 }
 
+function FdeQuoteForm({
+  deal,
+  report,
+  reload,
+}: {
+  deal: { id: string; stage: string; need_desc?: string; quote_amount?: number };
+  report: (text: string) => void;
+  reload: () => void;
+}) {
+  const [error, setError] = useState("");
+  return (
+    <form className="space-y-2 border-t border-line pt-3" onSubmit={async (e) => {
+      e.preventDefault();
+      const form = new FormData(e.currentTarget);
+      const raw = String(form.get("quote") ?? "").trim();
+      const quote = Number(raw);
+      if (!raw || !Number.isFinite(quote) || quote <= 0) {
+        setError("请填写报价金额");
+        return;
+      }
+      setError("");
+      const stage = String(form.get("stage") || deal.stage);
+      await run(report, async () => {
+        await api(`/api/admin/deals/fde/${deal.id}`, { method: "PATCH", body: JSON.stringify({ stage, quote_amount: quote, quoted_at: new Date().toISOString().slice(0, 10) }) });
+        reload();
+        return `已保存「${deal.need_desc || deal.id}」的报价`;
+      });
+    }}>
+      <p data-testid="fde-stage-label">{deal.stage} · {deal.need_desc}{deal.quote_amount ? ` · 报价 ${deal.quote_amount}` : ""}</p>
+      <Input name="quote" type="number" min={1} placeholder="报价金额" data-testid="fde-quote" defaultValue={deal.quote_amount || ""} onChange={() => setError("")} />
+      {error ? <p className="text-sm text-[#7f1d1d]" data-testid="fde-quote-error">{error}</p> : null}
+      <select name="stage" className="w-full rounded-xl border border-line px-3 py-2" defaultValue={deal.stage} data-testid="fde-stage">
+        <option>需求沟通</option>
+        <option>已报价</option>
+      </select>
+      <Button type="submit" data-testid="fde-quote-save">保存报价</Button>
+    </form>
+  );
+}
+
 function EnterpriseDetail() {
   const { id = "" } = useParams();
   const { data, error, reload } = useData<any>(`/api/admin/enterprises/${id}`);
@@ -362,7 +404,11 @@ function EnterpriseDetail() {
           <div>
             <p className="text-sm text-muted"><button type="button" className="font-semibold text-[#1e4fc8]" data-testid="copy-phone" onClick={() => run(report, async () => { await navigator.clipboard.writeText(ent.contact_phone); return "已复制手机号"; })}>{ent.contact_phone}</button> · 点手机号可复制</p>
           </div>
-          <Button variant="outline" data-testid="zip" onClick={zip} disabled={!(data.files || []).some((f: { parent_file_id?: string }) => !f.parent_file_id)}>打包下载</Button>
+          {ent.status === "已撤回" ? (
+            <p className="text-sm text-[#7f1d1d]" data-testid="zip-blocked">授权已撤回，不能打包下载</p>
+          ) : (
+            <Button variant="outline" data-testid="zip" onClick={zip} disabled={!(data.files || []).some((f: { parent_file_id?: string }) => !f.parent_file_id)}>打包下载</Button>
+          )}
         </div>
         <div className="mt-3 grid gap-2 text-sm md:grid-cols-2">
           <p>信用代码：{ent.uscc || "待补"}（{ent.uscc_source || "未识别"}）</p>
@@ -379,7 +425,11 @@ function EnterpriseDetail() {
             {(data.files || []).filter((f: { parent_file_id?: string }) => !f.parent_file_id).map((f: { id: string; filename: string; kind: string; period_start?: string; size: number }) => (
               <li key={f.id} className="flex items-center justify-between gap-2">
                 <span className="truncate">{f.kind === "vat" ? "增值税" : "社保"} {f.period_start || ""} {f.filename}</span>
-                <a className="shrink-0 text-[#1e4fc8]" href={`/api/admin/files/${f.id}/download`} data-testid={`download-${f.kind}`}>下载</a>
+                {ent.status === "已撤回" ? (
+                  <span className="shrink-0 text-sm text-[#7f1d1d]">授权已撤回，不能下载</span>
+                ) : (
+                  <a className="shrink-0 text-[#1e4fc8]" href={`/api/admin/files/${f.id}/download`} data-testid={`download-${f.kind}`}>下载</a>
+                )}
               </li>
             ))}
             {(data.files || []).length === 0 ? <li className="text-muted">还没有文件</li> : null}
@@ -453,25 +503,7 @@ function EnterpriseDetail() {
           </form>
           <div className="mt-3 space-y-3 text-sm">
             {(data.fde_deals || []).map((deal: { id: string; stage: string; need_desc?: string; quote_amount?: number }) => (
-              <form key={`${deal.id}-${deal.stage}-${deal.quote_amount || 0}`} className="space-y-2 border-t border-line pt-3" onSubmit={async (e) => {
-                e.preventDefault();
-                const form = new FormData(e.currentTarget);
-                const stage = String(form.get("stage") || deal.stage);
-                const quote = Number(form.get("quote"));
-                await run(report, async () => {
-                  await api(`/api/admin/deals/fde/${deal.id}`, { method: "PATCH", body: JSON.stringify({ stage, quote_amount: quote, quoted_at: new Date().toISOString().slice(0, 10) }) });
-                  reload();
-                  return `已保存「${deal.need_desc || deal.id}」的报价`;
-                });
-              }}>
-                <p data-testid="fde-stage-label">{deal.stage} · {deal.need_desc}{deal.quote_amount ? ` · 报价 ${deal.quote_amount}` : ""}</p>
-                <Input name="quote" type="number" placeholder="报价金额" required data-testid="fde-quote" defaultValue={deal.quote_amount || ""} />
-                <select name="stage" className="w-full rounded-xl border border-line px-3 py-2" defaultValue={deal.stage} data-testid="fde-stage">
-                  <option>需求沟通</option>
-                  <option>已报价</option>
-                </select>
-                <Button type="submit" data-testid="fde-quote-save" onClick={(e) => invalidHint(e, report, `报价 ${deal.id}`)}>保存报价</Button>
-              </form>
+              <FdeQuoteForm key={`${deal.id}-${deal.stage}-${deal.quote_amount || 0}`} deal={deal} report={report} reload={reload} />
             ))}
           </div>
         </Card>
@@ -785,9 +817,10 @@ function DraftDetail() {
         <Textarea className="mt-2 min-h-48 font-mono text-xs" value={text} onChange={(e) => setText(e.target.value)} data-testid="draft-json" placeholder="还没有建议规则。贴上规则 JSON 后再采纳。" />
         <div className="mt-3 flex flex-wrap gap-2">
           <Button type="button" variant="outline" data-testid="save-draft-json" onClick={saveJson}>保存规则 JSON</Button>
-          <Button type="button" data-testid="adopt-draft" onClick={adopt}>采纳为草稿规则</Button>
+          <Button type="button" data-testid="adopt-draft" onClick={adopt} disabled={Boolean(adoptBlockedReason(data.draft.status))}>采纳为草稿规则</Button>
           <Button type="button" variant="outline" data-testid="reject-draft" onClick={() => run(report, async () => { await api(`/api/admin/policy-drafts/${id}/reject`, { method: "POST", body: JSON.stringify({ reason: "与现有规则重复或依据不足" }) }); reload(); return "已驳回这份草稿"; })}>驳回</Button>
         </div>
+        {adoptBlockedReason(data.draft.status) ? <p className="mt-2 text-sm text-[#7f1d1d]" data-testid="adopt-closed">{adoptBlockedReason(data.draft.status)}</p> : null}
         {msg ? <p className="mt-2 text-sm" data-testid="draft-msg">{msg}</p> : null}
       </Card>
     </div>
@@ -924,7 +957,12 @@ function AiSettingsBody() {
   const settings = useData<{ settings: Record<string, string> }>("/api/admin/settings");
   const [vendor, setVendor] = useState("deepseek");
   const [msg, setMsg] = useState("");
+  const [slots, setSlots] = useState<Record<string, string> | null>(null);
   const report = (value: string) => setMsg(value);
+  useEffect(() => {
+    if (!settings.data) return;
+    setSlots((prev) => prev ?? Object.fromEntries(MODEL_SLOT_KEYS.map((key) => [key, settings.data?.settings?.[key] || ""])));
+  }, [settings.data]);
   async function create(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = new FormData(e.currentTarget);
@@ -957,11 +995,13 @@ function AiSettingsBody() {
   }
   async function assign(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const form = new FormData(e.currentTarget);
+    if (!slots) return report("模型分配还在读取，请稍后再保存");
     const payload: Record<string, string> = {};
-    for (const key of ["llm_text_primary", "llm_text_fallback", "llm_vision_primary", "llm_vision_fallback"]) payload[key] = String(form.get(key) || "");
+    for (const key of MODEL_SLOT_KEYS) payload[key] = slots[key] || "";
+    const explicitClear = MODEL_SLOT_KEYS.every((key) => !payload[key]);
     await run(report, async () => {
-      await api("/api/admin/settings", { method: "PUT", body: JSON.stringify({ settings: payload }) });
+      await api("/api/admin/settings", { method: "PUT", body: JSON.stringify({ settings: payload, clear_model_slots: explicitClear }) });
+      settings.reload();
       return "主用和备用模型已更新";
     });
   }
@@ -1009,15 +1049,15 @@ function AiSettingsBody() {
         </ul>
         <form onSubmit={assign} className="mt-4 space-y-2">
           <h3 className="font-semibold">用途分配</h3>
-          {(["llm_text_primary", "llm_text_fallback", "llm_vision_primary", "llm_vision_fallback"] as const).map((key) => (
+          {slots && data ? MODEL_SLOT_KEYS.map((key) => (
             <label key={key} className="block text-sm">{key}
-              <select name={key} className="mt-1 w-full rounded-xl border border-line px-3 py-2" defaultValue={settings.data?.settings?.[key] || ""}>
+              <select name={key} className="mt-1 w-full rounded-xl border border-line px-3 py-2" data-testid={`slot-${key}`} value={slots[key] || ""} onChange={(e) => setSlots({ ...slots, [key]: e.target.value })}>
                 <option value="">不使用</option>
-                {(data?.providers || []).map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}
+                {(data.providers || []).map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}
               </select>
             </label>
-          ))}
-          <Button type="submit" data-testid="save-assignment">保存分配</Button>
+          )) : <p className="text-sm text-muted">正在读取已保存的模型分配…</p>}
+          <Button type="submit" data-testid="save-assignment" disabled={!slots || !data}>保存分配</Button>
         </form>
         {msg ? <p className="mt-2 text-sm" data-testid="model-test-result">{msg}</p> : null}
       </Card>

@@ -3,7 +3,9 @@ import { formatPublicBand, parseBands, suggestBand, validateBands } from "../../
 import { evaluate, DISCLAIMER } from "../../shared/rules/evaluate";
 import { parseRule } from "../../shared/rules/schema";
 import { normalizeSuggestedRule } from "../../shared/rules/suggest";
-import { makeVisionProbe, visionProbeFailure, visionProbePassed } from "../../shared/visionProbe";
+import { emptyModelSlotRejection, MODEL_SLOT_KEYS } from "../../shared/modelSlots";
+import { adoptBlockedReason } from "../../shared/policyDraft";
+import { assistantMessageText, makeVisionProbe, visionProbeFailure, visionProbePassed } from "../../shared/visionProbe";
 import type { PolicyRule } from "../../shared/rules/types";
 import { cityFromRegion, entityFromUscc, isValidUscc, regionFromUscc } from "../../shared/uscc";
 import { decryptSecret, encryptSecret } from "../crypto";
@@ -672,9 +674,20 @@ adminRoutes.get("/admin/settings", async (c) => {
 
 adminRoutes.put("/admin/settings", async (c) => {
   if (!adminOnly(c.get("role"))) return c.json({ error: "只有管理员可以改系统设置" }, 403);
-  const body = await readJson<{ settings?: Record<string, string> }>(c.req.raw);
+  const body = await readJson<{ settings?: Record<string, string>; clear_model_slots?: boolean }>(c.req.raw);
   if (!body?.settings) return c.json({ error: "缺少设置" }, 400);
   const allowed = ["consultant_phone", "consultant_wechat", "wecom_webhook", "llm_text_primary", "llm_text_fallback", "llm_vision_primary", "llm_vision_fallback", "estimate_bands"];
+  if (MODEL_SLOT_KEYS.some((key) => Object.prototype.hasOwnProperty.call(body.settings, key))) {
+    const rows = await c.env.DB.prepare(
+      `SELECT key, value FROM settings WHERE key IN (${MODEL_SLOT_KEYS.map(() => "?").join(",")})`,
+    )
+      .bind(...MODEL_SLOT_KEYS)
+      .all<{ key: string; value: string }>();
+    const existing: Record<string, string> = {};
+    for (const row of rows.results || []) existing[row.key] = row.value;
+    const blocked = emptyModelSlotRejection(body.settings, existing, body.clear_model_slots === true);
+    if (blocked) return c.json({ error: blocked }, 409);
+  }
   for (const [key, raw] of Object.entries(body.settings)) {
     if (!allowed.includes(key)) continue;
     let value = raw;
@@ -843,7 +856,7 @@ adminRoutes.post("/admin/ai-providers/:id/test", async (c) => {
       signal: AbortSignal.timeout(Math.min(row.timeout_ms || 60_000, 60_000)),
     });
     const text = await res.text();
-    const reply = assistantText(text);
+    const reply = assistantMessageText(text);
     if (probe) {
       ok = res.ok && visionProbePassed(reply, probe.code);
       message = ok ? `视觉连通，模型读出了图中的数字（HTTP ${res.status}）` : visionProbeFailure(reply, probe.code, res.status);
@@ -994,32 +1007,41 @@ adminRoutes.post("/admin/policy-drafts/:id/adopt", async (c) => {
   const draft = await c.env.DB.prepare("SELECT * FROM policy_drafts WHERE id = ?").bind(c.req.param("id")).first<{
     id: string;
     title: string;
+    status: string;
     suggested_definition_json: string | null;
     match_policy_id: string | null;
   }>();
-  if (!draft?.suggested_definition_json) return c.json({ error: "草稿还没有规则 JSON，请先编辑" }, 400);
+  if (!draft) return c.json({ error: "草稿不存在" }, 404);
+  const blocked = adoptBlockedReason(draft.status);
+  if (blocked) return c.json({ error: blocked }, 409);
+  if (!draft.suggested_definition_json) return c.json({ error: "草稿还没有规则 JSON，请先编辑" }, 400);
   const parsed = parseRule(JSON.parse(draft.suggested_definition_json));
   if (!parsed.rule) return c.json({ error: parsed.error }, 400);
   const body = await readJson<{ policy_id?: string }>(c.req.raw);
   const now = nowIso();
   let policyId = body?.policy_id || draft.match_policy_id;
-  let versionId = uid();
-  if (!policyId) {
-    policyId = uid();
-    await c.env.DB.prepare("INSERT INTO policies (id, code, name, category, status, current_version, origin, created_at, updated_at) VALUES (?, ?, ?, ?, '草稿', 1, 'crawl', ?, ?)")
-      .bind(policyId, parsed.rule.code, parsed.rule.name, parsed.rule.category, now, now)
-      .run();
-    await c.env.DB.prepare("INSERT INTO policy_versions (id, policy_id, version, definition_json, basis, url, created_by, created_at) VALUES (?, ?, 1, ?, ?, ?, ?, ?)")
-      .bind(versionId, policyId, JSON.stringify(parsed.rule), parsed.rule.basis || "", parsed.rule.url || "", c.get("userId"), now)
-      .run();
-  } else {
-    const policy = await c.env.DB.prepare("SELECT current_version FROM policies WHERE id = ?").bind(policyId).first<{ current_version: number }>();
-    if (!policy) return c.json({ error: "要更新的政策不存在" }, 404);
-    const version = policy.current_version + 1;
-    await c.env.DB.prepare("UPDATE policies SET current_version = ?, name = ?, updated_at = ?, status = '草稿' WHERE id = ?").bind(version, parsed.rule.name, now, policyId).run();
-    await c.env.DB.prepare("INSERT INTO policy_versions (id, policy_id, version, definition_json, basis, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .bind(versionId, policyId, version, JSON.stringify(parsed.rule), parsed.rule.basis || "", c.get("userId"), now)
-      .run();
+  const versionId = uid();
+  try {
+    if (!policyId) {
+      policyId = uid();
+      await c.env.DB.prepare("INSERT INTO policies (id, code, name, category, status, current_version, origin, created_at, updated_at) VALUES (?, ?, ?, ?, '草稿', 1, 'crawl', ?, ?)")
+        .bind(policyId, parsed.rule.code, parsed.rule.name, parsed.rule.category, now, now)
+        .run();
+      await c.env.DB.prepare("INSERT INTO policy_versions (id, policy_id, version, definition_json, basis, url, created_by, created_at) VALUES (?, ?, 1, ?, ?, ?, ?, ?)")
+        .bind(versionId, policyId, JSON.stringify(parsed.rule), parsed.rule.basis || "", parsed.rule.url || "", c.get("userId"), now)
+        .run();
+    } else {
+      const policy = await c.env.DB.prepare("SELECT current_version FROM policies WHERE id = ?").bind(policyId).first<{ current_version: number }>();
+      if (!policy) return c.json({ error: "要更新的政策不存在" }, 404);
+      const version = policy.current_version + 1;
+      await c.env.DB.prepare("UPDATE policies SET current_version = ?, name = ?, updated_at = ?, status = '草稿' WHERE id = ?").bind(version, parsed.rule.name, now, policyId).run();
+      await c.env.DB.prepare("INSERT INTO policy_versions (id, policy_id, version, definition_json, basis, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+        .bind(versionId, policyId, version, JSON.stringify(parsed.rule), parsed.rule.basis || "", c.get("userId"), now)
+        .run();
+    }
+  } catch (err) {
+    if (String(err).toLowerCase().includes("unique")) return c.json({ error: "政策编码已存在" }, 409);
+    throw err;
   }
   await c.env.DB.prepare("UPDATE policy_drafts SET status = '已采纳', reviewed_by = ?, reviewed_at = ?, created_policy_version_id = ? WHERE id = ?")
     .bind(c.get("userId"), now, versionId, draft.id)
@@ -1061,11 +1083,3 @@ function resolveBaseUrl(vendor: string, base: unknown): { url: string } | { erro
   return { url };
 }
 
-function assistantText(raw: string): string {
-  try {
-    const data = JSON.parse(raw) as { choices?: { message?: { content?: string } }[] };
-    return data.choices?.[0]?.message?.content || raw;
-  } catch {
-    return raw;
-  }
-}

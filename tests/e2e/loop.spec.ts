@@ -186,6 +186,14 @@ test("闭环：建账号、复核发布、管道、规则、抓取、模型和�
     ]).then(([file]) => file);
     const packed = unzipSync(new Uint8Array(await zip.createReadStream().then(streamToBuffer)));
     expect(Object.keys(packed).length).toBeGreaterThan(0);
+
+    await companyPage.goto("/app/settings");
+    await companyPage.getByTestId("revoke").click();
+    await expect(companyPage.getByText("授权已撤回，资料将在 7 天内删除。")).toBeVisible();
+    await consultantPage.reload();
+    await expect(consultantPage.getByTestId("zip-blocked")).toHaveText("授权已撤回，不能打包下载");
+    await expect(consultantPage.getByTestId("zip")).toHaveCount(0);
+    await expect(consultantPage.getByTestId("download-vat")).toHaveCount(0);
   } finally {
     server.close();
     await admin.close();

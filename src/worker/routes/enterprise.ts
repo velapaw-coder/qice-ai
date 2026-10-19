@@ -15,6 +15,7 @@ function gate(c: { get: (k: "userId") => string }) {
 
 enterpriseRoutes.get("/me", async (c) => {
   if (!gate(c)) return c.json({ error: "请先登录" }, 401);
+  // 会话已在中间件查过。顾问没有 enterpriseId，这里不再查企业；企业账号只做一次主键读取。
   const ent = c.get("enterpriseId")
     ? await getEnterprise(c.env.DB, c.get("enterpriseId")!)
     : null;
@@ -33,13 +34,23 @@ enterpriseRoutes.get("/me", async (c) => {
           contact_name: ent.contact_name,
           status: ent.status,
           status_note: ent.status_note,
-          warnings: JSON.parse(ent.warnings_json || "[]"),
+          warnings: readWarnings(ent.warnings_json),
           city: ent.city,
           entity_type: ent.entity_type,
         }
       : null,
   });
 });
+
+export function readWarnings(raw: string | null | undefined): unknown[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
 enterpriseRoutes.get("/consent/current", async (c) => {
   if (c.get("role") !== "enterprise") return c.json({ error: "只有企业账号可以查看授权书" }, 403);

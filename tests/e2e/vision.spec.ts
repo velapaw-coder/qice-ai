@@ -62,7 +62,7 @@ test("照片走视觉模型，未配置或失败时进入顾问复核", async ({
     await expect(adminPage.getByTestId("admin-home")).toBeVisible();
     const cleared = await adminPage.request.put("/api/admin/settings", {
       headers: { "x-qice-request": "1", "content-type": "application/json" },
-      data: { settings: { llm_text_primary: "", llm_text_fallback: "", llm_vision_primary: "", llm_vision_fallback: "" } },
+      data: { clear_model_slots: true, settings: { llm_text_primary: "", llm_text_fallback: "", llm_vision_primary: "", llm_vision_fallback: "" } },
     });
     expect(cleared.ok()).toBeTruthy();
 

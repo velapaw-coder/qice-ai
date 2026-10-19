@@ -213,6 +213,8 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
     await consultantPage.getByTestId("create-fde").click();
     await expect(consultantPage.getByText("已创建 FDE 成交")).toBeVisible();
     await expect(consultantPage.getByTestId("fde-quote")).toBeVisible();
+    await consultantPage.getByTestId("fde-quote-save").click();
+    await expect(consultantPage.getByTestId("fde-quote-error")).toHaveText("请填写报价金额");
     await consultantPage.getByTestId("fde-quote").fill("26000");
     await consultantPage.getByTestId("fde-stage").selectOption("已报价");
     await consultantPage.getByTestId("fde-quote-save").click();
@@ -305,6 +307,15 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
     await expect(adminPage.getByTestId("draft-msg")).toContainText("规则已保存");
     await adminPage.getByTestId("adopt-draft").click();
     await expect(adminPage.getByTestId("draft-status")).toContainText("已采纳");
+    await expect(adminPage.getByTestId("adopt-draft")).toBeDisabled();
+    await expect(adminPage.getByTestId("adopt-closed")).toContainText("已经采纳过");
+    const draftId = new URL(adminPage.url()).pathname.split("/").pop();
+    const again = await adminPage.request.post(`/api/admin/policy-drafts/${draftId}/adopt`, {
+      headers: { "x-qice-request": "1", "content-type": "application/json" },
+      data: {},
+    });
+    expect(again.status()).toBe(409);
+    expect(((await again.json()) as { error: string }).error).toContain("已经采纳过");
     await adminPage.goto("/admin/policies");
     await adminPage.getByTestId("enable-QA_PASTE_RULE").click();
     await expect(adminPage.getByTestId("disable-QA_PASTE_RULE")).toBeVisible();
@@ -365,9 +376,34 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
     await adminPage.locator("li", { hasText: "合成连通模型" }).getByTestId("test-text").click();
     await expect(adminPage.getByTestId("model-test-result")).toContainText("连通");
     expect(hits.length).toBeGreaterThan(0);
+    await expect(adminPage.getByTestId("save-assignment")).toBeEnabled({ timeout: 30_000 });
     await adminPage.locator("label", { hasText: "llm_vision_primary" }).locator("select").selectOption({ label: "合成连通模型" });
     await adminPage.getByTestId("save-assignment").click();
     await expect(adminPage.getByTestId("model-test-result")).toContainText("主用和备用模型已更新");
+    const assigned = {
+      text: await adminPage.getByTestId("slot-llm_text_primary").inputValue(),
+      fallback: await adminPage.getByTestId("slot-llm_text_fallback").inputValue(),
+      vision: await adminPage.getByTestId("slot-llm_vision_primary").inputValue(),
+      visionFallback: await adminPage.getByTestId("slot-llm_vision_fallback").inputValue(),
+    };
+    expect(assigned.vision).not.toBe("");
+    await adminPage.reload();
+    await expect(adminPage.getByTestId("slot-llm_vision_primary")).toHaveValue(assigned.vision);
+    await expect(adminPage.getByTestId("slot-llm_vision_primary").locator("option:checked")).toHaveText("合成连通模型");
+    await adminPage.getByTestId("save-assignment").click();
+    await expect(adminPage.getByTestId("model-test-result")).toContainText("主用和备用模型已更新");
+    await adminPage.reload();
+    await expect(adminPage.getByTestId("slot-llm_text_primary")).toHaveValue(assigned.text);
+    await expect(adminPage.getByTestId("slot-llm_text_fallback")).toHaveValue(assigned.fallback);
+    await expect(adminPage.getByTestId("slot-llm_vision_primary")).toHaveValue(assigned.vision);
+    await expect(adminPage.getByTestId("slot-llm_vision_fallback")).toHaveValue(assigned.visionFallback);
+    const wiped = await adminPage.request.put("/api/admin/settings", {
+      headers: { "x-qice-request": "1", "content-type": "application/json" },
+      data: { settings: { llm_text_primary: "", llm_text_fallback: "", llm_vision_primary: "", llm_vision_fallback: "" } },
+    });
+    expect(wiped.status()).toBe(409);
+    await adminPage.reload();
+    await expect(adminPage.getByTestId("slot-llm_vision_primary")).toHaveValue(assigned.vision);
 
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
     await register(photoPage, "深圳合成拍照科技有限公司", "13700000008", "Photo2234");

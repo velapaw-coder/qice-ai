@@ -37,13 +37,41 @@ export function makeVisionProbe(code?: string): { code: string; pngBase64: strin
   return { code: value, pngBase64: bytesToBase64(encodePng(width, height, raw)), prompt: VISION_PROBE_PROMPT };
 }
 
+/** 只认模型 content。空 content 不能退回整段 JSON，否则回声里的数字或 base64 会误判为看图成功。 */
+export function assistantMessageText(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  try {
+    const data = JSON.parse(trimmed) as { choices?: { message?: { content?: unknown } }[] };
+    if (!data || typeof data !== "object" || !("choices" in data)) return trimmed;
+    const content = data.choices?.[0]?.message?.content;
+    if (typeof content === "string") return content.trim();
+    if (Array.isArray(content)) {
+      return content
+        .map((part) => {
+          if (typeof part === "string") return part;
+          if (part && typeof part === "object" && "text" in part) return String((part as { text?: unknown }).text ?? "");
+          return "";
+        })
+        .join("")
+        .trim();
+    }
+    return "";
+  } catch {
+    return trimmed;
+  }
+}
+
 export function visionProbePassed(reply: string, code: string): boolean {
-  return reply.includes(code);
+  return reply.trim() === code;
 }
 
 export function visionProbeFailure(reply: string, code: string, status: number): string {
   const snippet = reply.replace(/\s+/g, " ").trim().slice(0, 80);
-  return `回复里没有图中的数字 ${code}（HTTP ${status}${snippet ? `，模型回复：${snippet}` : ""}）。只返回 HTTP 200 不能说明模型能看图。`;
+  if (!snippet) {
+    return `模型没有返回内容，回复里没有图中的数字 ${code}（HTTP ${status}）。只返回 HTTP 200 不能说明模型能看图。`;
+  }
+  return `回复里没有图中的数字 ${code}（HTTP ${status}，模型回复：${snippet}）。只返回 HTTP 200 不能说明模型能看图。`;
 }
 
 function pixelOn(code: string, x: number, y: number): boolean {
