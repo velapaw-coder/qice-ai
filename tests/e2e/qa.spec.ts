@@ -131,12 +131,17 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
     await login(adminPage, "13800000000", "Admin1234");
     await expect(adminPage.getByTestId("admin-home")).toBeVisible();
     await adminPage.goto("/admin/policies");
-    for (let i = 0; i < 40; i++) {
-      const button = adminPage.locator("[data-testid^='enable-']").first();
-      if ((await button.count()) === 0) break;
-      const id = await button.getAttribute("data-testid");
-      await button.click();
-      await expect(adminPage.getByTestId(id!)).toHaveCount(0);
+    for (let pageGuard = 0; pageGuard < 6; pageGuard += 1) {
+      for (let i = 0; i < 40; i++) {
+        const button = adminPage.locator("[data-testid^='enable-']").first();
+        if ((await button.count()) === 0) break;
+        const id = await button.getAttribute("data-testid");
+        await button.click();
+        await expect(adminPage.getByTestId(id!)).toHaveCount(0);
+      }
+      const next = adminPage.getByTestId("policy-next");
+      if (await next.isDisabled()) break;
+      await next.click();
     }
 
     await adminPage.goto("/admin/users");
