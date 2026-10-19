@@ -146,6 +146,7 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
 
   await companyPage.goto("/app/report");
   await expect(companyPage.getByTestId("estimate")).toHaveText("预计可申请：3–8 万元");
+  await expect(companyPage.getByTestId("estimate-note")).toHaveText("具体金额以顾问沟通为准");
   await expect(companyPage.getByTestId("claim-list")).toBeVisible();
   await expect(companyPage.getByTestId("disclaimer")).toHaveText(DISCLAIMER);
   const reportText = await companyPage.locator("body").innerText();

@@ -258,6 +258,7 @@ function ReportPage() {
       <Card>
         <p className="text-sm text-muted">整体预估</p>
         <h1 className="mt-1 text-2xl font-bold text-navy" data-testid="estimate">{String(data.public_estimate || "")}</h1>
+        <p className="mt-2 text-sm text-navy" data-testid="estimate-note">具体金额以顾问沟通为准</p>
         <p className="mt-3 text-sm leading-6" data-testid="disclaimer">{DISCLAIMER}</p>
       </Card>
       <h2 className="text-lg font-semibold">可申报项目</h2>
