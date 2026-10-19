@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { formatPublicBand, suggestBand, type EstimateBand } from "../../shared/bands";
 import { DISCLAIMER } from "../../shared/rules/evaluate";
 import { extractionLooksUnsafe } from "../../shared/profile";
 import { isValidUscc } from "../../shared/uscc";
@@ -245,7 +246,7 @@ enterpriseRoutes.get("/report", async (c) => {
     "SELECT * FROM assessments WHERE enterprise_id = ? AND status = 'published' ORDER BY version DESC LIMIT 1",
   )
     .bind(ent.id)
-    .first<{ id: string; snapshot_json: string; estimate_low: number; estimate_high: number; estimate_override_json: string | null; published_at: string }>();
+    .first<{ id: string; snapshot_json: string; estimate_low: number | null; estimate_high: number | null; published_at: string }>();
   if (ent.status !== "已发布" || !published) {
     const messages: Record<string, string> = {
       待上传: "请上传两份资料",
@@ -257,15 +258,15 @@ enterpriseRoutes.get("/report", async (c) => {
     };
     return c.json({ status: ent.status, status_note: ent.status_note, published: false, message: messages[ent.status] || "处理中" });
   }
-  const snap = JSON.parse(published.snapshot_json || "{}") as { items?: Record<string, unknown>[] };
-  const override = published.estimate_override_json ? JSON.parse(published.estimate_override_json) : null;
+  const snap = JSON.parse(published.snapshot_json || "{}") as { items?: Record<string, unknown>[]; band?: EstimateBand; public_estimate?: string };
+  const band = snap.band || suggestBand(Number(published.estimate_high ?? published.estimate_low ?? 0));
   const items = (snap.items || publishedItems(await loadItems(c.env.DB, published.id))).map(stripItem);
   return c.json({
     status: ent.status,
     published: true,
     published_at: published.published_at,
-    estimate_low: override?.low ?? published.estimate_low,
-    estimate_high: override?.high ?? published.estimate_high,
+    public_estimate: snap.public_estimate || formatPublicBand(band),
+    band,
     disclaimer: DISCLAIMER,
     items,
   });

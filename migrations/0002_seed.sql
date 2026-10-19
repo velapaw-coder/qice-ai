@@ -209,3 +209,4 @@ INSERT INTO settings (key, value) VALUES ('llm_text_primary', '');
 INSERT INTO settings (key, value) VALUES ('llm_text_fallback', '');
 INSERT INTO settings (key, value) VALUES ('llm_vision_primary', '');
 INSERT INTO settings (key, value) VALUES ('llm_vision_fallback', '');
+INSERT INTO settings (key, value) VALUES ('estimate_bands', '[{"id":"1-3","low":10000,"high":30000,"label":"1–3万"},{"id":"3-8","low":30000,"high":80000,"label":"3–8万"},{"id":"8-15","low":80000,"high":150000,"label":"8–15万"},{"id":"15-30","low":150000,"high":300000,"label":"15–30万"},{"id":"30-50","low":300000,"high":500000,"label":"30–50万"},{"id":"50+","low":500000,"high":null,"label":"50万以上"}]');

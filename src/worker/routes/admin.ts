@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { formatPublicBand, parseBands, suggestBand, validateBands } from "../../shared/bands";
 import { evaluate, DISCLAIMER } from "../../shared/rules/evaluate";
 import { parseRule } from "../../shared/rules/schema";
 import type { PolicyRule } from "../../shared/rules/types";
@@ -99,7 +100,25 @@ adminRoutes.get("/admin/enterprises/:id", async (c) => {
   for (const row of (profileRows.results || []) as { field: string; value_json: string; source: string; confidence: number | null }[]) {
     profile[row.field] = { value: JSON.parse(row.value_json), source: row.source, confidence: row.confidence };
   }
-  return c.json({ enterprise: ent, dup, files: files.results || [], profile, draft, items: items.results || [], published, staff: staff.results || [], appointments: appointments.results || [], policy_deals: policyDeals.results || [], fde_deals: fde.results || [], disclaimer: DISCLAIMER });
+  const bands = parseBands(await setting(db, "estimate_bands"));
+  const draftRow = draft as { estimate_high?: number } | null;
+  const suggested = suggestBand(Number(draftRow?.estimate_high ?? 0), bands);
+  return c.json({
+    enterprise: ent,
+    dup,
+    files: files.results || [],
+    profile,
+    draft,
+    items: items.results || [],
+    published,
+    staff: staff.results || [],
+    appointments: appointments.results || [],
+    policy_deals: policyDeals.results || [],
+    fde_deals: fde.results || [],
+    disclaimer: DISCLAIMER,
+    bands,
+    suggested_band_id: suggested.id,
+  });
 });
 
 adminRoutes.patch("/admin/enterprises/:id", async (c) => {
@@ -307,8 +326,6 @@ adminRoutes.patch("/admin/assessments/:id", async (c) => {
     items?: { id: string; tier?: string; verify_text?: string; reason?: string }[];
     add?: { name: string; category?: string; tier?: string; verify_text?: string };
     remove?: string[];
-    estimate_low?: number;
-    estimate_high?: number;
     clear_override?: boolean;
   }>(c.req.raw);
   if (!body) return c.json({ error: "无法读取" }, 400);
@@ -330,9 +347,6 @@ adminRoutes.patch("/admin/assessments/:id", async (c) => {
   }
   if (body.clear_override) {
     await c.env.DB.prepare("UPDATE assessments SET estimate_override_json = NULL WHERE id = ?").bind(assessment.id).run();
-  } else if (body.estimate_low !== undefined || body.estimate_high !== undefined) {
-    const override = { low: body.estimate_low ?? assessment.estimate_low, high: body.estimate_high ?? assessment.estimate_high, system_low: assessment.estimate_low, system_high: assessment.estimate_high };
-    await c.env.DB.prepare("UPDATE assessments SET estimate_override_json = ? WHERE id = ?").bind(JSON.stringify(override), assessment.id).run();
   }
   await audit(c.env.DB, c.get("userId"), "assessment.edit", "assessment", assessment.id, clientIp(c.req.raw));
   return c.json({ ok: true });
@@ -348,18 +362,25 @@ adminRoutes.post("/admin/assessments/:id/publish", async (c) => {
     estimate_override_json: string | null;
   }>();
   if (!assessment || assessment.status !== "draft") return c.json({ error: "没有可发布的初稿" }, 409);
+  const body = await readJson<{ band_id?: string }>(c.req.raw);
+  const bands = parseBands(await setting(c.env.DB, "estimate_bands"));
+  const band = body?.band_id ? bands.find((item) => item.id === body.band_id) : suggestBand(Number(assessment.estimate_high ?? 0), bands);
+  if (!band) return c.json({ error: "请选择对企业展示的档位" }, 400);
   const ent = await getEnterprise(c.env.DB, assessment.enterprise_id);
   if (!ent || ent.status === "暂不支持" || ent.status === "已撤回") return c.json({ error: "当前企业不能发布方案" }, 409);
   const items = await c.env.DB.prepare("SELECT id, name, category, tier, verify_text, reason, conditions_text, code FROM assessment_items WHERE assessment_id = ? ORDER BY sort").bind(assessment.id).all();
-  const override = assessment.estimate_override_json ? JSON.parse(assessment.estimate_override_json) : null;
+  const publicEstimate = formatPublicBand(band);
+  const override = { band_id: band.id, low: band.low, high: band.high, label: band.label, system_low: assessment.estimate_low, system_high: assessment.estimate_high };
   const snapshot = JSON.stringify({
     items: items.results || [],
     disclaimer: DISCLAIMER,
-    estimate_low: override?.low ?? assessment.estimate_low,
-    estimate_high: override?.high ?? assessment.estimate_high,
+    band,
+    public_estimate: publicEstimate,
+    system_low: assessment.estimate_low,
+    system_high: assessment.estimate_high,
   });
-  await c.env.DB.prepare("UPDATE assessments SET status = 'published', published_by = ?, published_at = ?, snapshot_json = ?, estimate_low = ?, estimate_high = ? WHERE id = ?")
-    .bind(c.get("userId"), nowIso(), snapshot, override?.low ?? assessment.estimate_low, override?.high ?? assessment.estimate_high, assessment.id)
+  await c.env.DB.prepare("UPDATE assessments SET status = 'published', published_by = ?, published_at = ?, snapshot_json = ?, estimate_low = ?, estimate_high = ?, estimate_override_json = ? WHERE id = ?")
+    .bind(c.get("userId"), nowIso(), snapshot, band.low, band.high, JSON.stringify(override), assessment.id)
     .run();
   await setStatus(c.env.DB, ent.id, "已发布", null);
   await audit(c.env.DB, c.get("userId"), "assessment.publish", "assessment", assessment.id, clientIp(c.req.raw));
@@ -618,10 +639,22 @@ adminRoutes.put("/admin/settings", async (c) => {
   if (!adminOnly(c.get("role"))) return c.json({ error: "只有管理员可以改系统设置" }, 403);
   const body = await readJson<{ settings?: Record<string, string> }>(c.req.raw);
   if (!body?.settings) return c.json({ error: "缺少设置" }, 400);
-  const allowed = ["consultant_phone", "consultant_wechat", "wecom_webhook", "llm_text_primary", "llm_text_fallback", "llm_vision_primary", "llm_vision_fallback"];
-  for (const [key, value] of Object.entries(body.settings)) {
+  const allowed = ["consultant_phone", "consultant_wechat", "wecom_webhook", "llm_text_primary", "llm_text_fallback", "llm_vision_primary", "llm_vision_fallback", "estimate_bands"];
+  for (const [key, raw] of Object.entries(body.settings)) {
     if (!allowed.includes(key)) continue;
+    let value = raw;
     if (key === "wecom_webhook" && value && !value.startsWith("https://")) return c.json({ error: "webhook 必须是 https 地址" }, 400);
+    if (key === "estimate_bands") {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(value);
+      } catch {
+        return c.json({ error: "预估档不是合法的 JSON" }, 400);
+      }
+      const checked = validateBands(parsed);
+      if (!checked.ok) return c.json({ error: checked.error }, 400);
+      value = JSON.stringify(checked.bands);
+    }
     await c.env.DB.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(key, value).run();
   }
   await audit(c.env.DB, c.get("userId"), "settings.update", "settings", "settings", clientIp(c.req.raw), { keys: Object.keys(body.settings) });

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { DEFAULT_BANDS, formatPublicBand, suggestBand } from "@shared/bands";
 import { DISCLAIMER, evaluate, formatRange } from "@shared/rules/evaluate";
 import type { PolicyRule, Profile, StaffMap } from "@shared/rules/types";
 
@@ -38,6 +39,10 @@ describe("爱华验收案例", () => {
     expect(result.estimate_low).toBe(0);
     expect(result.estimate_high).toBe(10_000);
     expect(formatRange(result.estimate_low, result.estimate_high)).toBe("最高约 1 万元/年");
+    const suggested = suggestBand(9600, DEFAULT_BANDS);
+    expect(suggested.id).toBe(DEFAULT_BANDS[0]?.id);
+    expect(suggestBand(result.estimate_high, DEFAULT_BANDS).id).toBe("1-3");
+    expect(formatPublicBand(DEFAULT_BANDS.find((band) => band.id === "3-8")!)).toBe("预计可申请：3–8 万元");
     const grad = tierOf(aihua, "GRAD_SS_SUBSIDY");
     expect(grad?.estimate_low).toBe(0);
     expect(grad?.estimate_high).toBe(9600);

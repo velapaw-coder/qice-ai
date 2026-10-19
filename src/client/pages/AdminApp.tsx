@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { zipSync } from "fflate";
 import { deriveClientKey } from "@shared/password";
+import { formatPublicBand, parseBands, type EstimateBand } from "@shared/bands";
 import { formatRange } from "@shared/rules/evaluate";
 import { api } from "../lib/api";
 import { Banner, Button, Card, Input, Label, Textarea, TierBadge } from "../components/ui";
@@ -142,6 +143,12 @@ function EnterpriseDetail() {
   const { id = "" } = useParams();
   const { data, error, reload } = useData<any>(`/api/admin/enterprises/${id}`);
   const [msg, setMsg] = useState("");
+  const [bandId, setBandId] = useState("");
+  const draftId = data?.draft?.id as string | undefined;
+  useEffect(() => {
+    if (!data) return;
+    setBandId(String(data.suggested_band_id || data.bands?.[0]?.id || ""));
+  }, [draftId]);
   if (error) return <Banner tone="error">{error}</Banner>;
   if (!data) return <p>正在读取企业…</p>;
   const ent = data.enterprise;
@@ -162,18 +169,8 @@ function EnterpriseDetail() {
     reload();
   }
   async function publish() {
-    await api(`/api/admin/assessments/${data.draft.id}/publish`, { method: "POST", body: "{}" });
+    await api(`/api/admin/assessments/${data.draft.id}/publish`, { method: "POST", body: JSON.stringify({ band_id: bandId }) });
     setMsg("已发布给企业");
-    reload();
-  }
-  async function saveRange(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const form = new FormData(e.currentTarget);
-    await api(`/api/admin/assessments/${data.draft.id}`, {
-      method: "PATCH",
-      body: JSON.stringify({ estimate_low: Number(form.get("low")), estimate_high: Number(form.get("high")) }),
-    });
-    setMsg("区间已保存，发布时按这个区间给企业看");
     reload();
   }
   async function ret(e: FormEvent<HTMLFormElement>) {
@@ -219,9 +216,9 @@ function EnterpriseDetail() {
   }
   const profile = data.profile || {};
   const value = (field: string) => profile[field]?.value ?? "";
-  const override = data.draft?.estimate_override_json ? JSON.parse(data.draft.estimate_override_json) : null;
-  const shownLow = Number(override?.low ?? data.draft?.estimate_low ?? 0);
-  const shownHigh = Number(override?.high ?? data.draft?.estimate_high ?? 0);
+  const bands = (data.bands || []) as EstimateBand[];
+  const systemLow = Number(data.draft?.estimate_low ?? 0);
+  const systemHigh = Number(data.draft?.estimate_high ?? 0);
   return (
     <div className="space-y-4" data-testid="admin-review">
       <Card>
@@ -278,13 +275,15 @@ function EnterpriseDetail() {
         </Card>
         <Card>
           <h2 className="font-semibold">方案初稿</h2>
-          {data.draft ? <p className="text-sm" data-testid="admin-estimate">系统区间 {formatRange(shownLow, shownHigh)}</p> : <p className="text-sm text-muted">还没有初稿</p>}
+          {data.draft ? <p className="text-sm" data-testid="admin-estimate">系统测算（仅顾问可见）{formatRange(systemLow, systemHigh)}</p> : <p className="text-sm text-muted">还没有初稿</p>}
           {data.draft ? (
-            <form onSubmit={saveRange} className="mt-2 grid gap-2 sm:grid-cols-2" data-testid="range-form">
-              <Input name="low" type="number" min={0} defaultValue={shownLow} data-testid="range-low" aria-label="发布下限" />
-              <Input name="high" type="number" min={0} defaultValue={shownHigh} data-testid="range-high" aria-label="发布上限" />
-              <Button type="submit" variant="outline" className="sm:col-span-2" data-testid="save-range">按这个区间发布</Button>
-            </form>
+            <div className="mt-2 space-y-2">
+              <Label>对企业展示的档位</Label>
+              <select className="w-full rounded-xl border border-line px-3 py-2" data-testid="band-select" value={bandId} onChange={(e) => setBandId(e.target.value)}>
+                {bands.map((band) => <option key={band.id} value={band.id}>{band.label}</option>)}
+              </select>
+              <p className="text-xs text-muted">{bands.find((band) => band.id === bandId) ? `企业将看到「${formatPublicBand(bands.find((band) => band.id === bandId)!)}」` : "请选择档位"}</p>
+            </div>
           ) : null}
           <ul className="mt-2 max-h-80 space-y-2 overflow-y-auto">
             {(data.items || []).map((item: { id: string; name: string; tier: string; code?: string; verify_text?: string; basis?: string }) => (
@@ -627,26 +626,80 @@ function Audit() {
   return <Card><h1 className="text-xl font-bold">审计日志</h1><ul className="mt-3 space-y-1 text-xs">{(data?.logs || []).map((log) => <li key={log.id}>{log.created_at} · {log.action} · {log.target_id}</li>)}{data && data.logs.length === 0 ? <li>还没有记录</li> : null}</ul></Card>;
 }
 
+interface BandDraft {
+  id: string;
+  lowWan: string;
+  highWan: string;
+  label: string;
+}
+
+function draftsFrom(raw: string | undefined): BandDraft[] {
+  return parseBands(raw).map((band) => ({
+    id: band.id,
+    lowWan: String(band.low / 10000),
+    highWan: band.high == null ? "" : String(band.high / 10000),
+    label: band.label,
+  }));
+}
+
 function Settings() {
   const { data, error } = useData<{ settings: Record<string, string> }>("/api/admin/settings");
   const [msg, setMsg] = useState("");
+  const [bands, setBands] = useState<BandDraft[] | null>(null);
+  useEffect(() => {
+    if (!data || bands) return;
+    setBands(draftsFrom(data.settings.estimate_bands));
+  }, [data, bands]);
   if (error) return <Banner tone="error">{error}</Banner>;
+  if (!data || !bands) return <p>正在读取设置…</p>;
+  const rows = bands;
   async function save(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = new FormData(e.currentTarget);
-    await api("/api/admin/settings", { method: "PUT", body: JSON.stringify({ settings: { consultant_phone: form.get("consultant_phone"), consultant_wechat: form.get("consultant_wechat"), wecom_webhook: form.get("wecom_webhook") } }) });
+    const payload = rows.map((band) => ({
+      id: band.id,
+      low: Math.round(Number(band.lowWan) * 10000),
+      high: band.highWan.trim() === "" ? null : Math.round(Number(band.highWan) * 10000),
+      label: band.label.trim(),
+    }));
+    await api("/api/admin/settings", {
+      method: "PUT",
+      body: JSON.stringify({
+        settings: {
+          consultant_phone: form.get("consultant_phone"),
+          consultant_wechat: form.get("consultant_wechat"),
+          wecom_webhook: form.get("wecom_webhook"),
+          estimate_bands: JSON.stringify(payload),
+        },
+      }),
+    });
     setMsg("已保存");
   }
   return (
     <Card>
       <h1 className="text-xl font-bold">系统设置</h1>
-      <form onSubmit={save} className="mt-3 space-y-2">
+      <form onSubmit={save} className="mt-3 space-y-3" data-testid="system-settings">
         <Label>顾问电话</Label>
-        <Input name="consultant_phone" defaultValue={data?.settings?.consultant_phone || ""} />
+        <Input name="consultant_phone" defaultValue={data.settings.consultant_phone || ""} />
         <Label>顾问微信</Label>
-        <Input name="consultant_wechat" defaultValue={data?.settings?.consultant_wechat || ""} />
+        <Input name="consultant_wechat" defaultValue={data.settings.consultant_wechat || ""} />
         <Label>企业微信机器人 webhook</Label>
         <Input name="wecom_webhook" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..." />
+        <div>
+          <h2 className="font-semibold">企业可见预估档</h2>
+          <p className="text-sm text-muted">金额单位是万元。最后一档可以不填上限，表示“以上”。企业只看到档位，看不到系统测算的具体金额。</p>
+          <div className="mt-2 space-y-2">
+            {bands.map((band, index) => (
+              <div key={band.id} className="grid grid-cols-2 gap-2 sm:grid-cols-[1fr_1fr_1.4fr_auto]">
+                <Input aria-label="下限万元" inputMode="decimal" value={band.lowWan} onChange={(e) => setBands(bands.map((item, i) => i === index ? { ...item, lowWan: e.target.value } : item))} />
+                <Input aria-label="上限万元" inputMode="decimal" value={band.highWan} placeholder="以上" onChange={(e) => setBands(bands.map((item, i) => i === index ? { ...item, highWan: e.target.value } : item))} />
+                <Input aria-label="档位名称" value={band.label} onChange={(e) => setBands(bands.map((item, i) => i === index ? { ...item, label: e.target.value } : item))} />
+                <Button type="button" variant="outline" onClick={() => setBands(bands.filter((_, i) => i !== index))}>删除</Button>
+              </div>
+            ))}
+          </div>
+          <Button type="button" variant="outline" className="mt-2" onClick={() => setBands([...bands, { id: `b${bands.length + 1}`, lowWan: "", highWan: "", label: "新档位" }])}>加一档</Button>
+        </div>
         <Button type="submit">保存</Button>
       </form>
       {msg ? <p className="mt-2 text-sm">{msg}</p> : null}

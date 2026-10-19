@@ -72,7 +72,7 @@ npx wrangler d1 migrations apply qice-ai --remote
 PEPPER='线上的同一串' node scripts/create-admin.mjs --phone 13800000000 --password '请换成强密码' --name 管理员 --role admin --remote
 ```
 
-5. 确认后再发布：
+5. 确认后再发布。线上域名是 `qice.chang2.ccwu.cc`（自定义域名）。这个账号的 `workers.dev` 打不开，不要靠它访问。应用只接受与当前请求相同的来源，Cookie 不设置 Domain，代码里没有写死 `workers.dev` 或 localhost。
 
 ```bash
 npx wrangler deploy
@@ -91,7 +91,7 @@ Workers 的速率限制绑定只支持 10 秒或 60 秒窗口，所以 `REGISTER
 - 数据库是 D1，文件在私有 R2，不做应用层整文件加密。模型密钥用 `SETTINGS_ENC_KEY` 做 AES-GCM，界面只显示后 4 位。
 - 密码：浏览器 PBKDF2-SHA256 60 万次，盐是 `qice-v1:` 加手机号。Worker 只对客户端密钥做 HMAC-SHA256，胡椒是 `PEPPER`。
 - 规则在 `seed/policies.json`，迁移时以草稿写入。只有管理员启用后才参与匹配。
-- 整体预估区间只在顾问发布后给企业看。下限只加总可推进项目，上限包含顾问保留的需核实项目。下限为 0 时显示「最高约 X」。顾问可以在发布前改这个区间。单项不显示金额。资金类只作提示，不计入区间。
+- 系统内部仍算出金额，只在顾问复核页显示。企业看到的永远是档位，例如「预计可申请：3–8 万元」，不会出现单个数字或「最高约 X」。档位在后台「设置」里改，默认是 1–3万、3–8万、8–15万、15–30万、30–50万、50万以上。测算低于最低档时建议最低档。单项不显示金额。资金类只作提示，不计入内部测算。
 - 服务费没有默认比例。顾问在后台手工填写线下约定。
 
 ## 已知限制

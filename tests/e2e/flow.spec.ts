@@ -126,9 +126,8 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
     await expect(card).not.toContainText("可推进");
   }
   await expect(consultantPage.getByTestId("admin-estimate")).toContainText("最高约 1 万元");
-  await expect(consultantPage.getByTestId("range-low")).toBeVisible();
-  await consultantPage.getByTestId("save-range").click();
-  await expect(consultantPage.getByText("区间已保存")).toBeVisible();
+  await expect(consultantPage.getByTestId("band-select")).toHaveValue("1-3");
+  await consultantPage.getByTestId("band-select").selectOption("3-8");
   await consultantPage.locator("main").evaluate((node) => { node.scrollTop = 0; });
   const header = await consultantPage.getByTestId("admin-header").boundingBox();
   const review = await consultantPage.getByTestId("admin-review").boundingBox();
@@ -146,10 +145,11 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
   await expect(consultantPage.getByTestId("create-policy-deal")).toBeVisible();
 
   await companyPage.goto("/app/report");
-  await expect(companyPage.getByTestId("estimate")).toContainText("最高约 1 万元");
+  await expect(companyPage.getByTestId("estimate")).toHaveText("预计可申请：3–8 万元");
+  await expect(companyPage.getByTestId("claim-list")).toBeVisible();
   await expect(companyPage.getByTestId("disclaimer")).toHaveText(DISCLAIMER);
   const reportText = await companyPage.locator("body").innerText();
-  for (const banned of ["服务费", "30%", "7800", "9000"]) expect(reportText).not.toContain(banned);
+  for (const banned of ["服务费", "30%", "7800", "9000", "9600", "最高约"]) expect(reportText).not.toContain(banned);
   await shot(companyPage, "enterprise-report");
   await companyPage.getByTestId("slot").selectOption("工作日上午");
   await companyPage.getByTestId("topic").selectOption("both");

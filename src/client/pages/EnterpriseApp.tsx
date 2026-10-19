@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { formatRange, DISCLAIMER } from "@shared/rules/evaluate";
+import { DISCLAIMER } from "@shared/rules/evaluate";
 import { api, putFile } from "../lib/api";
 import { compressImage, extractionFromPdfText, maybeConvertHeic, parseSpreadsheet, readPdf } from "../lib/files";
 import { recognizePages } from "../lib/vision";
@@ -256,10 +256,12 @@ function ReportPage() {
   return (
     <div className="space-y-4 pb-24" data-testid="report-page">
       <Card>
-        <p className="text-sm text-muted">整体预估区间</p>
-        <h1 className="mt-1 text-2xl font-bold text-navy" data-testid="estimate">{formatRange(Number(data.estimate_low || 0), Number(data.estimate_high || 0))}</h1>
+        <p className="text-sm text-muted">整体预估</p>
+        <h1 className="mt-1 text-2xl font-bold text-navy" data-testid="estimate">{String(data.public_estimate || "")}</h1>
         <p className="mt-3 text-sm leading-6" data-testid="disclaimer">{DISCLAIMER}</p>
       </Card>
+      <h2 className="text-lg font-semibold">可申报项目</h2>
+      <div data-testid="claim-list" className="space-y-4">
       {groups.map((group) => group.items.length ? (
         <div key={group.tier} className="space-y-2">
           {group.items.map((item) => (
@@ -277,6 +279,7 @@ function ReportPage() {
           ))}
         </div>
       ) : null)}
+      </div>
       <form onSubmit={book} className="no-print space-y-3 rounded-2xl border border-line bg-white p-4" data-testid="appointment-form">
         <h2 className="font-semibold">预约顾问沟通</h2>
         <Label>时间</Label>

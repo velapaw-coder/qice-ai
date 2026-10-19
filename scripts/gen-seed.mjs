@@ -71,6 +71,14 @@ for (const [kind, content] of [
     `INSERT INTO consent_templates (version, kind, content_md, effective_at) VALUES (${q(kind === "consent" ? "v1" : kind + "-v1")}, ${q(kind)}, ${q(content)}, ${q(now)});`,
   );
 }
+const estimateBands = JSON.stringify([
+  { id: "1-3", low: 10000, high: 30000, label: "1–3万" },
+  { id: "3-8", low: 30000, high: 80000, label: "3–8万" },
+  { id: "8-15", low: 80000, high: 150000, label: "8–15万" },
+  { id: "15-30", low: 150000, high: 300000, label: "15–30万" },
+  { id: "30-50", low: 300000, high: 500000, label: "30–50万" },
+  { id: "50+", low: 500000, high: null, label: "50万以上" },
+]);
 for (const [key, value] of [
   ["consultant_phone", ""],
   ["consultant_wechat", ""],
@@ -79,6 +87,7 @@ for (const [key, value] of [
   ["llm_text_fallback", ""],
   ["llm_vision_primary", ""],
   ["llm_vision_fallback", ""],
+  ["estimate_bands", estimateBands],
 ]) {
   lines.push(`INSERT INTO settings (key, value) VALUES (${q(key)}, ${q(value)});`);
 }
