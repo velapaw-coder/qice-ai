@@ -75,7 +75,10 @@ adminRoutes.get("/admin/enterprises", async (c) => {
   )
     .bind(status, status, q, `%${q}%`, `%${q}%`)
     .all();
-  return c.json({ enterprises: rows.results || [] });
+  const counted = await c.env.DB.prepare("SELECT status, COUNT(*) AS n FROM enterprises WHERE account_status = 'active' GROUP BY status").all<{ status: string; n: number }>();
+  const counts: Record<string, number> = {};
+  for (const row of counted.results || []) counts[row.status] = row.n;
+  return c.json({ enterprises: rows.results || [], counts });
 });
 
 adminRoutes.get("/admin/enterprises/:id", async (c) => {

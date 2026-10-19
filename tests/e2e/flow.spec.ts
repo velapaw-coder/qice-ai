@@ -73,6 +73,7 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
   await adminPage.goto("/login");
   await login(adminPage, "13800000000", "Admin1234");
   await expect(adminPage.getByTestId("admin-home")).toBeVisible();
+  await shot(adminPage, "admin-todos");
   const auditRes = await adminPage.request.get("/api/admin/audit");
   const auditJson = (await auditRes.json()) as { logs: { action: string; actor_id: string | null; ip: string | null; meta_json: string | null }[] };
   const agreed = auditJson.logs.find((log) => log.action === "consent.agree");
@@ -155,6 +156,11 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
   const mobileReview = await consultantPage.getByTestId("admin-review").boundingBox();
   expect(mobileHeader && mobileReview && mobileHeader.y < 8 && mobileReview.y >= mobileHeader.y + mobileHeader.height - 1).toBeTruthy();
   await shot(consultantPage, "admin-review-mobile", false);
+  await consultantPage.getByTestId("admin-menu").click();
+  await expect(consultantPage.getByTestId("admin-drawer")).toBeVisible();
+  await expect(consultantPage.getByRole("link", { name: "待办" })).toBeVisible();
+  await shot(consultantPage, "admin-drawer", false);
+  await consultantPage.getByTestId("admin-menu-close").click();
   await consultantPage.setViewportSize({ width: 1280, height: 720 });
   await consultantPage.getByTestId("publish").click();
   await expect(consultantPage.getByText("已发布给企业")).toBeVisible();
@@ -168,6 +174,9 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
   const reportText = await companyPage.locator("body").innerText();
   for (const banned of ["服务费", "30%", "7800", "9000", "9600", "最高约"]) expect(reportText).not.toContain(banned);
   await shot(companyPage, "enterprise-report");
+  await companyPage.setViewportSize({ width: 390, height: 844 });
+  await shot(companyPage, "enterprise-mobile", false);
+  await companyPage.setViewportSize({ width: 1280, height: 720 });
   await companyPage.getByTestId("slot").selectOption("工作日上午");
   await companyPage.getByTestId("topic").selectOption("both");
   await companyPage.getByTestId("book").click();

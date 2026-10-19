@@ -4,7 +4,7 @@ import { DISCLAIMER } from "@shared/rules/evaluate";
 import { api, putFile } from "../lib/api";
 import { compressImage, extractionFromPdfText, maybeConvertHeic, parseSpreadsheet, readPdf } from "../lib/files";
 import { recognizePages } from "../lib/vision";
-import { Banner, Button, Card, Input, Label, Textarea, TierBadge } from "../components/ui";
+import { Banner, BrandMark, Button, Card, Input, Label, PageHeader, Textarea, TierBadge } from "../components/ui";
 import { ChangePasswordPage } from "./AuthPages";
 
 interface Me {
@@ -23,17 +23,34 @@ export function EnterpriseApp() {
   if (!me) return <p className="p-6 text-sm text-muted">正在读取账号…</p>;
   if (me.user.role !== "enterprise") return <Navigate to="/admin" replace />;
   if (me.user.must_change_password && location.pathname !== "/app/change-password") return <Navigate to="/app/change-password" replace />;
+  const step = progressIndex(me.enterprise?.status || "待上传");
+  const nav = [
+    ["/app/upload", "资料"],
+    ["/app/report", "方案"],
+    ["/app/settings", "设置"],
+  ];
   return (
     <div className="flex h-dvh min-h-0 flex-col bg-bg">
-      <header className="no-print z-30 shrink-0 border-b border-line bg-white">
-        <div className="mx-auto flex min-h-14 max-w-3xl items-center justify-between gap-3 px-4">
-          <Link to="/app" className="shrink-0 font-extrabold text-navy">企策AI</Link>
-          <nav className="flex gap-3 overflow-x-auto text-sm whitespace-nowrap">
-            <Link to="/app/upload">资料</Link>
-            <Link to="/app/report">方案</Link>
-            <Link to="/app/settings">设置</Link>
+      <header className="no-print z-30 shrink-0 bg-gradient-to-r from-[#0c1936] to-[#16356f] text-white">
+        <div className="mx-auto flex min-h-16 max-w-3xl items-center justify-between gap-3 px-4">
+          <Link to="/app" className="flex shrink-0 items-center gap-2 text-lg font-extrabold tracking-tight"><BrandMark light />企策AI</Link>
+          <nav className="flex gap-1 overflow-x-auto text-sm whitespace-nowrap">
+            {nav.map(([path, label]) => (
+              <Link key={path} to={path} className={`rounded-full px-3 py-1.5 font-semibold ${location.pathname.startsWith(path) ? "bg-white text-[#1e4fc8]" : "text-[#d5e2f7]"}`}>{label}</Link>
+            ))}
           </nav>
         </div>
+        <ol className="mx-auto flex max-w-3xl gap-2 overflow-x-auto px-4 pb-4" data-testid="progress-steps">
+          {["注册", "上传", "识别", "顾问复核", "方案"].map((label, index) => {
+            const state = index < step ? "done" : index === step ? "current" : "todo";
+            return (
+              <li key={label} className={`min-w-[4.5rem] flex-1 rounded-xl px-2 py-2 text-center ${state === "current" ? "bg-white text-[#1e4fc8]" : state === "done" ? "bg-white/15 text-white" : "bg-white/5 text-[#93a9cb]"}`}>
+                <span className="block text-[11px] font-extrabold">{String(index + 1).padStart(2, "0")}</span>
+                <span className="block text-xs font-semibold">{label}</span>
+              </li>
+            );
+          })}
+        </ol>
       </header>
       <main className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-3xl px-4 py-5">
@@ -50,6 +67,13 @@ export function EnterpriseApp() {
   );
 }
 
+function progressIndex(status: string) {
+  if (status === "识别中") return 2;
+  if (status === "待复核" || status === "暂不支持") return 3;
+  if (status === "已发布") return 4;
+  return 1;
+}
+
 function StatusHome({ me }: { me: Me }) {
   const status = me.enterprise?.status || "待上传";
   const text: Record<string, string> = {
@@ -62,16 +86,18 @@ function StatusHome({ me }: { me: Me }) {
     已撤回: "授权已撤回，资料将在 7 天内删除",
   };
   return (
-    <Card>
-      <p className="text-sm text-muted">{me.enterprise?.name}</p>
-      <h1 className="mt-1 text-xl font-bold" data-testid="status-title">{status}</h1>
-      <p className="mt-2 text-sm" data-testid="status-message">{text[status]}</p>
+    <div className="space-y-4">
+      <PageHeader kicker={me.enterprise?.name || "企业门户"} title="办理进度" description="注册之后，按上传、识别、顾问复核，直到方案发布。" />
+      <Card>
+      <h1 className="text-2xl font-extrabold tracking-tight text-navy" data-testid="status-title">{status}</h1>
+      <p className="mt-2 text-sm text-muted" data-testid="status-message">{text[status]}</p>
       {status === "需补传" ? <Banner tone="error">{me.enterprise?.status_note}</Banner> : null}
-      <div className="mt-4 flex gap-2">
+      <div className="flex gap-2">
         {["待上传", "识别中", "需补传"].includes(status) ? <Button asChild><Link to="/app/upload">去上传</Link></Button> : null}
         {status === "已发布" ? <Button asChild><Link to="/app/report">查看方案</Link></Button> : null}
       </div>
-    </Card>
+      </Card>
+    </div>
   );
 }
 
@@ -172,26 +198,38 @@ function UploadPage({ me }: { me: Me }) {
   const link = typeof window === "undefined" ? "" : window.location.origin + "/app/upload";
   return (
     <div className="space-y-4" data-testid="upload-page">
+      <PageHeader kicker="上传资料" title="两份表就够开始" description="有 Excel 原件时优先上传原件。文件较大时建议用电脑。手机里如果选不到聊天文件，可以拍照，或把链接发给电脑。" />
       <Card>
-        <h1 className="text-xl font-bold">上传两份资料</h1>
-        <p className="mt-2 text-sm text-muted">有 Excel 原件时优先上传原件。文件较大时建议用电脑上传。手机微信里如果选不到聊天文件，可以拍照，或把链接发给电脑。</p>
-        <div className="mt-3 rounded-xl bg-bg p-3 text-sm">
-          <b>资料在电脑上？</b>
-          <p className="text-muted">复制链接，用电脑浏览器或电脑版微信打开，登录后上传。</p>
-          <Button type="button" variant="outline" className="mt-2" onClick={() => navigator.clipboard.writeText(link)}>复制上传链接</Button>
+        <div className="flex items-start gap-3">
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[15px] bg-[#edf3ff] text-xl text-[#2d62eb]">▣</span>
+          <div>
+            <h2 className="font-semibold text-navy">资料在电脑上？</h2>
+            <p className="text-sm text-muted">复制链接，用电脑浏览器或电脑版微信打开，登录后上传。</p>
+            <Button type="button" variant="outline" className="mt-3" onClick={() => navigator.clipboard.writeText(link)}>复制上传链接</Button>
+          </div>
         </div>
       </Card>
       <Card>
-        <h2 className="font-semibold">最近一年增值税申报表</h2>
-        <p className="text-sm text-muted">可多选，月报或季报都可以，最多 30 个文件。</p>
-        <Input className="mt-2" type="file" multiple accept=".xlsx,.xls,.csv,.pdf,.jpg,.jpeg,.png,.heic" data-testid="vat-file" onChange={(e) => onPick("vat", e.target.files)} />
-        <div className="mt-2"><UploadConsentLine marked /></div>
+        <div className="flex items-start gap-3">
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[15px] bg-[#edf3ff] text-xl text-[#2d62eb]">▤</span>
+          <div className="min-w-0 flex-1">
+            <h2 className="font-semibold text-navy">最近一年增值税申报表</h2>
+            <p className="text-sm text-muted">可多选，月报或季报都可以，最多 30 个文件。</p>
+            <Input className="mt-3 file:mr-3 file:rounded-[11px] file:border-0 file:bg-brand file:px-3 file:py-2 file:text-sm file:font-bold file:text-white" type="file" multiple accept=".xlsx,.xls,.csv,.pdf,.jpg,.jpeg,.png,.heic" data-testid="vat-file" onChange={(e) => onPick("vat", e.target.files)} />
+            <div className="mt-2"><UploadConsentLine marked /></div>
+          </div>
+        </div>
       </Card>
       <Card>
-        <h2 className="font-semibold">最新一个月社保清单</h2>
-        <p className="text-sm text-muted">最多 10 个文件，照片可以一页一张。</p>
-        <Input className="mt-2" type="file" multiple accept=".xlsx,.xls,.csv,.pdf,.jpg,.jpeg,.png,.heic" data-testid="ss-file" onChange={(e) => onPick("social_security", e.target.files)} />
-        <div className="mt-2"><UploadConsentLine /></div>
+        <div className="flex items-start gap-3">
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[15px] bg-[#edf3ff] text-xl text-[#2d62eb]">▥</span>
+          <div className="min-w-0 flex-1">
+            <h2 className="font-semibold text-navy">最新一个月社保清单</h2>
+            <p className="text-sm text-muted">最多 10 个文件，照片可以一页一张。</p>
+            <Input className="mt-3 file:mr-3 file:rounded-[11px] file:border-0 file:bg-brand file:px-3 file:py-2 file:text-sm file:font-bold file:text-white" type="file" multiple accept=".xlsx,.xls,.csv,.pdf,.jpg,.jpeg,.png,.heic" data-testid="ss-file" onChange={(e) => onPick("social_security", e.target.files)} />
+            <div className="mt-2"><UploadConsentLine /></div>
+          </div>
+        </div>
       </Card>
       {files.length ? (
         <Card>
@@ -221,7 +259,12 @@ function ReportPage() {
   if (error) return <Banner tone="error">{error}</Banner>;
   if (!data) return <p className="text-sm text-muted">正在读取方案…</p>;
   if (!data.published) {
-    return <Card><h1 className="text-xl font-bold">{String(data.status)}</h1><p className="mt-2 text-sm" data-testid="status-message">{String(data.message || "")}</p></Card>;
+    return (
+      <div className="space-y-4">
+        <PageHeader kicker="方案" title={String(data.status)} description={String(data.message || "")} />
+        <p className="sr-only" data-testid="status-message">{String(data.message || "")}</p>
+      </div>
+    );
   }
   const items = (data.items as { name: string; category: string; tier: string; verify_text?: string; reason?: string }[]) || [];
   const groups = ["go", "verify", "reject"].map((tier) => ({ tier, items: items.filter((item) => item.tier === tier) }));
@@ -235,14 +278,15 @@ function ReportPage() {
     setSent(true);
   }
   return (
-    <div className="space-y-4 pb-24" data-testid="report-page">
-      <Card>
-        <p className="text-sm text-muted">整体预估</p>
-        <h1 className="mt-1 text-2xl font-bold text-navy" data-testid="estimate">{String(data.public_estimate || "")}</h1>
-        <p className="mt-2 text-sm text-navy" data-testid="estimate-note">具体金额以顾问沟通为准</p>
-        <p className="mt-3 text-sm leading-6" data-testid="disclaimer">{DISCLAIMER}</p>
-      </Card>
-      <h2 className="text-lg font-semibold">可申报项目</h2>
+    <div className="space-y-4 pb-8" data-testid="report-page">
+      <PageHeader kicker="初步方案" title="顾问复核后的结果" description="下面是对企业展示的预估档和可申报项目。单项金额不会出现在这里。" />
+      <section className="overflow-hidden rounded-[22px] bg-gradient-to-br from-[#13316b] to-[#285ee0] p-6 text-white shadow-[0_20px_50px_#213c7020]">
+        <p className="text-sm text-[#cbdafc]">整体预估</p>
+        <h1 className="mt-2 text-3xl font-extrabold tracking-tight" data-testid="estimate">{String(data.public_estimate || "")}</h1>
+        <p className="mt-3 text-sm text-white" data-testid="estimate-note">具体金额以顾问沟通为准</p>
+        <p className="mt-3 text-sm leading-6 text-[#d5e4ff]" data-testid="disclaimer">{DISCLAIMER}</p>
+      </section>
+      <h2 className="text-lg font-extrabold tracking-tight text-navy">可申报项目</h2>
       <div data-testid="claim-list" className="space-y-4">
       {groups.map((group) => group.items.length ? (
         <div key={group.tier} className="space-y-2">
@@ -262,7 +306,7 @@ function ReportPage() {
         </div>
       ) : null)}
       </div>
-      <form onSubmit={book} className="no-print space-y-3 rounded-2xl border border-line bg-white p-4" data-testid="appointment-form">
+      <form onSubmit={book} className="no-print space-y-3 rounded-[18px] border border-line bg-white p-5 shadow-[0_10px_32px_#1d46800a]" data-testid="appointment-form">
         <h2 className="font-semibold">预约顾问沟通</h2>
         <Label>时间</Label>
         <select name="slot" className="w-full rounded-xl border border-line px-3 py-2" data-testid="slot">
@@ -301,8 +345,8 @@ function SettingsPage() {
   }
   return (
     <div className="space-y-4">
+      <PageHeader kicker="账号" title="设置" description="修改密码、撤回授权，或申请删除已上传的资料。" />
       <Card>
-        <h1 className="text-xl font-bold">设置</h1>
         <div className="mt-4 flex flex-col gap-2">
           <Button asChild variant="outline"><Link to="/app/change-password">修改密码</Link></Button>
           <Button variant="danger" onClick={revoke} data-testid="revoke">撤回授权</Button>

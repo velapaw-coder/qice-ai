@@ -2,19 +2,20 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { deriveClientKey, passwordError, phoneError } from "@shared/password";
 import { api } from "../lib/api";
-import { Banner, Button, Card, Input, Label } from "../components/ui";
+import { Banner, BrandMark, Button, Card, Input, Label } from "../components/ui";
 
 function Shell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-bg">
-      <header className="border-b border-line bg-white">
+      <header className="bg-gradient-to-r from-[#0c1936] to-[#16356f] text-white">
         <div className="mx-auto flex h-16 w-full max-w-lg items-center justify-between px-4">
-          <Link to="/" className="text-xl font-extrabold tracking-tight text-navy">企策AI</Link>
-          <Link to="/login" className="text-sm font-semibold text-brand">登录</Link>
+          <Link to="/" className="flex items-center gap-2 text-xl font-extrabold tracking-tight"><BrandMark light />企策AI</Link>
+          <Link to="/login" className="text-sm font-semibold text-[#d5e2f7]">登录</Link>
         </div>
       </header>
       <main className="mx-auto w-full max-w-lg px-4 py-8">
-        <h1 className="mb-4 text-2xl font-bold text-navy">{title}</h1>
+        <p className="text-[13px] font-extrabold tracking-[0.18em] text-brand">企策AI</p>
+        <h1 className="mb-4 text-2xl font-extrabold tracking-tight text-navy">{title}</h1>
         <Card>{children}</Card>
       </main>
     </div>
@@ -135,7 +136,6 @@ export function LoginPage() {
 }
 
 export function ChangePasswordPage({ next }: { next: string }) {
-  const navigate = useNavigate();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
@@ -150,25 +150,24 @@ export function ChangePasswordPage({ next }: { next: string }) {
       const old_client_key = await deriveClientKey(phone, oldPassword);
       const new_client_key = await deriveClientKey(phone, password);
       await api("/api/auth/change-password", { method: "POST", body: JSON.stringify({ old_client_key, new_client_key }) });
-      navigate(next);
+      window.location.assign(next);
     } catch (err) {
       setError(err instanceof Error ? err.message : "修改失败");
-    } finally {
       setBusy(false);
     }
   }
-  return (
-    <Shell title="修改密码">
-      <form onSubmit={onSubmit} className="space-y-3" data-testid="change-password">
-        <Label>手机号</Label>
-        <Input name="phone" required data-testid="change-phone" />
-        <Label>当前密码或临时密码</Label>
-        <Input name="old" type="password" required data-testid="change-old" />
-        <Label>新密码</Label>
-        <Input name="password" type="password" required data-testid="change-new" />
-        {error ? <Banner tone="error">{error}</Banner> : null}
-        <Button className="w-full" disabled={busy}>保存新密码</Button>
-      </form>
-    </Shell>
+  const form = (
+    <form onSubmit={onSubmit} className="space-y-3" data-testid="change-password">
+      <Label>手机号</Label>
+      <Input name="phone" required data-testid="change-phone" />
+      <Label>当前密码或临时密码</Label>
+      <Input name="old" type="password" required data-testid="change-old" />
+      <Label>新密码</Label>
+      <Input name="password" type="password" required data-testid="change-new" />
+      {error ? <Banner tone="error">{error}</Banner> : null}
+      <Button className="w-full" disabled={busy}>保存新密码</Button>
+    </form>
   );
+  if (next.startsWith("/admin") || next.startsWith("/app")) return <Card><h1 className="mb-3 text-xl font-extrabold text-navy">修改密码</h1>{form}</Card>;
+  return <Shell title="修改密码">{form}</Shell>;
 }
