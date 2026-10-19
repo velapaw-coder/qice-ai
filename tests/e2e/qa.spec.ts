@@ -142,7 +142,10 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
       }
       const next = adminPage.getByTestId("policy-next");
       if (await next.isDisabled()) break;
-      await next.click();
+      await Promise.all([
+        adminPage.waitForResponse((res) => res.url().includes("/api/admin/policies?") && res.url().includes(`page=${pageGuard + 2}`)),
+        next.click(),
+      ]);
     }
 
     await adminPage.goto("/admin/users");
