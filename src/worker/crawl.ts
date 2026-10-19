@@ -1,3 +1,4 @@
+import { applyModelSuggestion, POLICY_EXTRACTION_PROMPT } from "../shared/rules/suggest";
 import { uid, nowIso, type Env } from "./util";
 import { setting } from "./util";
 import { decryptSecret } from "./crypto";
@@ -145,11 +146,12 @@ async function draftFromText(env: Env, opts: {
   let confidence: unknown = null;
   const llm = await callPolicyModel(env, opts.text.slice(0, 30_000));
   if (llm) {
-    extracted = llm;
+    const applied = applyModelSuggestion(llm);
+    extracted = applied.extracted;
     relevance = llm.relevant === false ? "忽略" : "相关";
     ignore = String(llm.ignore_reason || "");
-    definition = llm.definition_json || null;
-    confidence = llm.confidence || null;
+    definition = applied.rule;
+    confidence = applied.confidence;
   }
   const status = relevance === "忽略" ? "已忽略" : "待审核";
   await env.DB.prepare(
@@ -197,8 +199,7 @@ async function callPolicyModel(env: Env, text: string): Promise<Record<string, u
   } catch {
     return null;
   }
-  const prompt =
-    "你是政策研究员。只输出 JSON，字段：relevant(boolean), ignore_reason, name, doc_no, issuer, region, entity, category, hard(string[]), soft(string[]), effective_from, effective_to, confidence(0-1), definition_json。不要输出原文中的个人信息。";
+  const prompt = `${POLICY_EXTRACTION_PROMPT} 不要输出原文中的个人信息。`;
   const body = {
     model: row.model,
     messages: [

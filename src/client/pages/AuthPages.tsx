@@ -78,7 +78,7 @@ export function RegisterPage() {
         <Label hint="至少 8 位，包含字母和数字">再输入一次</Label>
         <Input name="password2" type="password" required data-testid="password2" />
         {error ? <Banner tone="error">{error}</Banner> : null}
-        <Button className="w-full" disabled={busy} data-testid="register-submit">{busy ? "正在创建账号…" : "注册并上传资料"}</Button>
+        <Button type="submit" className="w-full" disabled={busy} data-testid="register-submit">{busy ? "正在创建账号…" : "注册并上传资料"}</Button>
       </form>
       <p className="mt-4 text-sm text-muted">已有账号？<Link className="text-[#1e4fc8]" to="/login">去登录</Link></p>
     </Shell>
@@ -123,7 +123,7 @@ export function LoginPage() {
         <Label>密码</Label>
         <Input name="password" type="password" required data-testid="login-password" />
         {error ? <Banner tone="error">{error}</Banner> : null}
-        <Button className="w-full" disabled={busy} data-testid="login-submit">{busy ? "正在校验…" : "登录"}</Button>
+        <Button type="submit" className="w-full" disabled={busy} data-testid="login-submit">{busy ? "正在校验…" : "登录"}</Button>
       </form>
       <p className="mt-4 text-sm text-muted">
         忘记密码请联系您的顾问
@@ -165,7 +165,7 @@ export function ChangePasswordPage({ next }: { next: string }) {
       <Label>新密码</Label>
       <Input name="password" type="password" required data-testid="change-new" />
       {error ? <Banner tone="error">{error}</Banner> : null}
-      <Button className="w-full" disabled={busy}>保存新密码</Button>
+      <Button type="submit" className="w-full" disabled={busy}>保存新密码</Button>
     </form>
   );
   if (next.startsWith("/admin") || next.startsWith("/app")) return <Card><h1 className="mb-3 text-xl font-extrabold text-navy">修改密码</h1>{form}</Card>;

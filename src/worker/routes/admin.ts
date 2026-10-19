@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import { formatPublicBand, parseBands, suggestBand, validateBands } from "../../shared/bands";
 import { evaluate, DISCLAIMER } from "../../shared/rules/evaluate";
 import { parseRule } from "../../shared/rules/schema";
+import { normalizeSuggestedRule } from "../../shared/rules/suggest";
+import { makeVisionProbe, visionProbeFailure, visionProbePassed } from "../../shared/visionProbe";
 import type { PolicyRule } from "../../shared/rules/types";
 import { cityFromRegion, entityFromUscc, isValidUscc, regionFromUscc } from "../../shared/uscc";
 import { decryptSecret, encryptSecret } from "../crypto";
@@ -619,6 +621,7 @@ adminRoutes.get("/admin/users", async (c) => {
 adminRoutes.post("/admin/users", async (c) => {
   if (!adminOnly(c.get("role"))) return c.json({ error: "只有管理员可以创建账号" }, 403);
   const body = await readJson<{ phone?: string; name?: string; role?: string; client_key?: string }>(c.req.raw);
+  if (body?.phone) body.phone = body.phone.trim();
   if (!body?.phone || !/^1\d{10}$/.test(body.phone)) return c.json({ error: "手机号不正确" }, 400);
   if (!body.client_key || !/^[0-9a-f]{64}$/.test(body.client_key)) return c.json({ error: "临时密码格式不正确" }, 400);
   if (body.role !== "consultant" && body.role !== "admin") return c.json({ error: "角色只能是顾问或管理员" }, 400);
@@ -627,11 +630,16 @@ adminRoutes.post("/admin/users", async (c) => {
   const { serverPasswordHash } = await import("../../shared/password");
   const hash = await serverPasswordHash(c.env.PEPPER, body.client_key, salt);
   const id = uid();
-  await c.env.DB.prepare(
-    "INSERT INTO users (id, phone, password_hash, salt, role, name, status, must_change_password, failed_logins, created_at) VALUES (?, ?, ?, ?, ?, ?, 'active', 1, 0, ?)",
-  )
-    .bind(id, body.phone, hash, salt, body.role, body.name || "", nowIso())
-    .run();
+  try {
+    await c.env.DB.prepare(
+      "INSERT INTO users (id, phone, password_hash, salt, role, name, status, must_change_password, failed_logins, created_at) VALUES (?, ?, ?, ?, ?, ?, 'active', 1, 0, ?)",
+    )
+      .bind(id, body.phone.trim(), hash, salt, body.role, (body.name || "").trim(), nowIso())
+      .run();
+  } catch (err) {
+    if (String(err).toLowerCase().includes("unique")) return c.json({ error: "这个手机号已经注册" }, 409);
+    throw err;
+  }
   await audit(c.env.DB, c.get("userId"), "user.create", "user", id, clientIp(c.req.raw), { role: body.role });
   return c.json({ id });
 });
@@ -722,6 +730,8 @@ adminRoutes.post("/admin/ai-providers", async (c) => {
   }>(c.req.raw);
   if (!body?.name || !body.model || !body.vendor) return c.json({ error: "请填写名称、厂商和模型" }, 400);
   if (!body.api_key) return c.json({ error: "请填写 API key" }, 400);
+  const base = resolveBaseUrl(body.vendor, body.base_url);
+  if ("error" in base) return c.json({ error: base.error }, 400);
   let enc = "";
   try {
     enc = await encryptSecret(c.env.SETTINGS_ENC_KEY, body.api_key);
@@ -737,7 +747,7 @@ adminRoutes.post("/admin/ai-providers", async (c) => {
       id,
       body.name,
       body.vendor,
-      body.base_url || VENDORS[body.vendor] || "",
+      base.url,
       enc,
       body.api_key.slice(-4),
       body.model,
@@ -765,6 +775,15 @@ adminRoutes.patch("/admin/ai-providers/:id", async (c) => {
   if (typeof body.api_key === "string" && body.api_key) {
     enc = await encryptSecret(c.env.SETTINGS_ENC_KEY, body.api_key);
     last4 = body.api_key.slice(-4);
+  }
+  if (typeof body.base_url === "string" || typeof body.vendor === "string") {
+    const vendor = String(body.vendor || "");
+    const currentRow = await c.env.DB.prepare("SELECT vendor, base_url FROM ai_providers WHERE id = ?").bind(c.req.param("id")).first<{ vendor: string; base_url: string }>();
+    const nextVendor = vendor || currentRow?.vendor || "";
+    const nextBase = typeof body.base_url === "string" ? body.base_url : currentRow?.base_url;
+    const resolved = resolveBaseUrl(nextVendor, nextBase);
+    if ("error" in resolved) return c.json({ error: resolved.error }, 400);
+    body.base_url = resolved.url;
   }
   await c.env.DB.prepare(
     `UPDATE ai_providers SET name = COALESCE(?, name), base_url = COALESCE(?, base_url), model = COALESCE(?, model),
@@ -807,11 +826,12 @@ adminRoutes.post("/admin/ai-providers/:id/test", async (c) => {
   const started = Date.now();
   let ok = false;
   let message = "";
+  const probe = mode === "vision" ? makeVisionProbe() : null;
   try {
-    const content = mode === "vision"
+    const content = probe
       ? [
-          { type: "text", text: "读出图中的纳税人识别号和销售额，只输出 JSON。" },
-          { type: "image_url", image_url: { url: `data:image/png;base64,${SAMPLE_PNG}` } },
+          { type: "text", text: probe.prompt },
+          { type: "image_url", image_url: { url: `data:image/png;base64,${probe.pngBase64}` } },
         ]
       : "只输出 JSON：{\"ok\":true}";
     const payload: Record<string, unknown> = { model: row.model, messages: [{ role: "user", content }] };
@@ -823,10 +843,16 @@ adminRoutes.post("/admin/ai-providers/:id/test", async (c) => {
       signal: AbortSignal.timeout(Math.min(row.timeout_ms || 60_000, 60_000)),
     });
     const text = await res.text();
-    ok = res.ok && (mode === "vision" || text.includes("{"));
-    message = ok ? `连通，HTTP ${res.status}` : `失败 HTTP ${res.status} ${text.slice(0, 180)}`;
+    const reply = assistantText(text);
+    if (probe) {
+      ok = res.ok && visionProbePassed(reply, probe.code);
+      message = ok ? `视觉连通，模型读出了图中的数字（HTTP ${res.status}）` : visionProbeFailure(reply, probe.code, res.status);
+    } else {
+      ok = res.ok && (text.includes("{") || reply.includes("{"));
+      message = ok ? `连通，HTTP ${res.status}` : `失败 HTTP ${res.status} ${text.slice(0, 180)}`;
+    }
   } catch (err) {
-    message = String(err).slice(0, 180);
+    message = probe ? visionProbeFailure("", probe.code, 0) + ` ${String(err).slice(0, 120)}` : String(err).slice(0, 180);
   }
   const ms = Date.now() - started;
   await c.env.DB.prepare("UPDATE ai_providers SET last_test_at = ?, last_test_ok = ?, last_test_msg = ? WHERE id = ?").bind(nowIso(), ok ? 1 : 0, `${message}（${ms}ms）`, c.req.param("id")).run();
@@ -882,9 +908,10 @@ adminRoutes.post("/admin/policy-sources/:id/test", async (c) => {
         from = at + source.link_pattern.length;
       }
     }
-    return c.json({ ok: res.ok, status: res.status, links, ms: Date.now() - started });
+    const message = res.ok ? `试抓成功，发现 ${links} 个链接` : `试抓失败 HTTP ${res.status}`;
+    return c.json({ ok: res.ok, status: res.status, links, ms: Date.now() - started, message });
   } catch (err) {
-    return c.json({ ok: false, message: String(err).slice(0, 180), ms: Date.now() - started });
+    return c.json({ ok: false, message: `试抓失败：${String(err).slice(0, 160)}`, ms: Date.now() - started });
   }
 });
 
@@ -929,14 +956,22 @@ adminRoutes.get("/admin/policy-drafts/:id", async (c) => {
 adminRoutes.patch("/admin/policy-drafts/:id", async (c) => {
   const body = await readJson<{ title?: string; suggested_definition_json?: unknown; review_note?: string }>(c.req.raw);
   if (!body) return c.json({ error: "无法读取" }, 400);
+  let storedRule: string | null = null;
+  let flags: string[] = [];
+  let dropped: string[] = [];
   if (body.suggested_definition_json) {
-    const parsed = parseRule(body.suggested_definition_json);
-    if (!parsed.rule) return c.json({ error: parsed.error }, 400);
+    const normalized = normalizeSuggestedRule(body.suggested_definition_json);
+    flags = normalized.flags;
+    dropped = normalized.dropped;
+    if (!normalized.rule) {
+      return c.json({ error: flags.join("；") || "规则未通过校验", flags, dropped }, 400);
+    }
+    storedRule = JSON.stringify(normalized.rule);
   }
   await c.env.DB.prepare("UPDATE policy_drafts SET title = COALESCE(?, title), suggested_definition_json = COALESCE(?, suggested_definition_json), review_note = COALESCE(?, review_note) WHERE id = ?")
-    .bind(body.title || null, body.suggested_definition_json ? JSON.stringify(body.suggested_definition_json) : null, body.review_note ?? null, c.req.param("id"))
+    .bind(body.title || null, storedRule, body.review_note ?? null, c.req.param("id"))
     .run();
-  return c.json({ ok: true });
+  return c.json({ ok: true, flags, dropped });
 });
 
 adminRoutes.post("/admin/policy-drafts/import", async (c) => {
@@ -1018,5 +1053,19 @@ adminRoutes.get("/admin/regions", async (c) => {
 void hitLimit;
 void profileMap;
 
-/** 1×1 合成 PNG，只用于「测试连接」时给视觉模型一个最小图片，不是真实申报表。 */
-const SAMPLE_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+function resolveBaseUrl(vendor: string, base: unknown): { url: string } | { error: string } {
+  const trimmed = String(base || "").trim();
+  const url = trimmed || (vendor === "custom" ? "" : VENDORS[vendor] || "");
+  if (vendor === "custom" && !/^https?:\/\//i.test(url)) return { error: "自定义厂商需要填写以 http:// 或 https:// 开头的 Base URL" };
+  if (!/^https?:\/\//i.test(url)) return { error: "Base URL 需要以 http:// 或 https:// 开头" };
+  return { url };
+}
+
+function assistantText(raw: string): string {
+  try {
+    const data = JSON.parse(raw) as { choices?: { message?: { content?: string } }[] };
+    return data.choices?.[0]?.message?.content || raw;
+  } catch {
+    return raw;
+  }
+}

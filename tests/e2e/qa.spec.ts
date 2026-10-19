@@ -74,10 +74,14 @@ async function openEnterprise(page: Page, name: string) {
 }
 
 async function tempPassword(page: Page) {
-  const text = await page.getByTestId("temp-password").innerText();
-  const password = text.match(/临时密码：([^。\s]+)/)?.[1];
-  expect(password).toBeTruthy();
-  return password!;
+  const locator = page.getByTestId("temp-password");
+  let password = "";
+  await expect.poll(async () => {
+    const text = await locator.innerText().catch(() => "");
+    password = text.match(/临时密码：([^。\s]+)/)?.[1] || "";
+    return password;
+  }, { timeout: 60_000 }).not.toBe("");
+  return password;
 }
 
 async function assertNoDeadAnchors(page: Page) {
@@ -358,7 +362,7 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
     await adminPage.getByTestId("privacy-ack").check();
     await adminPage.getByRole("button", { name: "保存模型" }).click();
     await expect(adminPage.locator("b", { hasText: "合成连通模型" })).toBeVisible();
-    await adminPage.getByTestId("test-text").click();
+    await adminPage.locator("li", { hasText: "合成连通模型" }).getByTestId("test-text").click();
     await expect(adminPage.getByTestId("model-test-result")).toContainText("连通");
     expect(hits.length).toBeGreaterThan(0);
     await adminPage.locator("label", { hasText: "llm_vision_primary" }).locator("select").selectOption({ label: "合成连通模型" });

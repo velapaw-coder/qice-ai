@@ -53,22 +53,50 @@ function norm(s: string): string {
 
 function parseNumber(raw: string | undefined): number | undefined {
   if (!raw) return undefined;
-  const cleaned = raw.replace(/[,，\s元人民币￥¥]/g, "").replace(/^\((.*)\)$/, "-$1");
-  if (!cleaned || cleaned === "-" || cleaned === "—") return undefined;
-  const n = Number(cleaned);
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed === "-" || trimmed === "—") return undefined;
+  if (/[A-Za-z]/.test(trimmed)) return undefined;
+  const compact = trimmed.replace(/[,，\s元人民币￥¥]/g, "");
+  const wrapped = /^\((.*)\)$/.exec(compact);
+  const source = wrapped ? `-${wrapped[1]}` : compact;
+  const match = source.match(/-?\d+(?:\.\d+)?/);
+  if (!match) return undefined;
+  const n = Number(match[0]);
   return Number.isFinite(n) ? n : undefined;
+}
+
+function validYmd(y: string, mo: string, d: string): boolean {
+  const month = Number(mo);
+  const day = Number(d);
+  return Number(y) >= 1990 && Number(y) <= 2100 && month >= 1 && month <= 12 && day >= 1 && day <= 31;
 }
 
 function parseDate(raw: string | undefined): string | undefined {
   if (!raw) return undefined;
   const s = raw.trim();
-  let m = /^(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?$/.exec(s);
-  if (m) return iso(m[1]!, m[2]!, m[3]!);
-  m = /^(\d{4})(\d{2})(\d{2})$/.exec(s);
-  if (m) return iso(m[1]!, m[2]!, m[3]!);
-  m = /^(\d{4})年(\d{1,2})月$/.exec(s);
-  if (m) return iso(m[1]!, m[2]!, "1");
+  const full = /(\d{4})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*日?/.exec(s);
+  if (full && validYmd(full[1]!, full[2]!, full[3]!)) return iso(full[1]!, full[2]!, full[3]!);
+  if (/^\d{8}$/.test(s)) {
+    const compact = /^(\d{4})(\d{2})(\d{2})$/.exec(s);
+    if (compact && validYmd(compact[1]!, compact[2]!, compact[3]!)) return iso(compact[1]!, compact[2]!, compact[3]!);
+  }
+  const monthOnly = /(\d{4})\s*年\s*(\d{1,2})\s*月(?!\s*\d)/.exec(s);
+  if (monthOnly && Number(monthOnly[2]) >= 1 && Number(monthOnly[2]) <= 12) return iso(monthOnly[1]!, monthOnly[2]!, "1");
   return undefined;
+}
+
+function cellDate(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  const s = raw.trim();
+  if (s.length > 20) return undefined;
+  return parseDate(s);
+}
+
+function parseAmount(raw: string | undefined): number | undefined {
+  if (!raw) return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length <= 20 && parseDate(trimmed)) return undefined;
+  return parseNumber(trimmed);
 }
 
 function iso(y: string, mo: string, d: string): string {
@@ -143,10 +171,80 @@ export function parseMatrices(sheets: SheetMatrix[], filename = ""): Extraction 
 }
 
 export function parseVatText(text: string): Extraction {
-  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  const rows = lines.map((l) => l.split(/\t|\s{2,}|\|/));
+  const cleaned = text.replace(/\u0000/g, "");
+  const lines = cleaned.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const rows = lines.map((l) => l.split(/\t|\s+|\|/));
   const single = lines.map((l) => [l]);
-  return parseVat([...rows, ...single]);
+  const parsed = parseVat([...rows, ...single]);
+  const have = (parsed.periods || []).some((period) => period.start || period.sales !== undefined || period.vat_payable !== undefined);
+  if (have) return parsed;
+  const extra = periodsFromTokens(cleaned);
+  if (!extra.length) return parsed;
+  const drop = new Set(["找到了所属期表头，但没有读到期次数据", "没有读到增值税申报表的纳税人、所属期或税额"]);
+  const warnings = parsed.warnings.filter((warning) => !drop.has(warning));
+  const partial = warnings.length > 0 || !parsed.uscc_valid;
+  return {
+    ...parsed,
+    detected_type: "vat",
+    periods: extra,
+    warnings,
+    parse_status: partial ? "partial" : "success",
+    parse_note: partial ? warnings.join("；") || "部分字段缺失" : "已识别增值税申报表",
+    confidence: parsed.uscc_valid ? 0.95 : Math.max(parsed.confidence, 0.6),
+    source: "client",
+  };
+}
+
+function periodsFromTokens(text: string): VatPeriod[] {
+  const found: VatPeriod[] = [];
+  const seen = new Set<string>();
+  const push = (period: VatPeriod) => {
+    if (!period.start && period.sales === undefined && period.vat_payable === undefined) return;
+    const key = `${period.start}|${period.end}|${period.sales ?? ""}|${period.vat_payable ?? ""}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    found.push(period);
+  };
+  const rangeRe = /(\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日?)\s*[至到~—–]\s*(\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日?)/g;
+  let match: RegExpExecArray | null;
+  while ((match = rangeRe.exec(text))) {
+    const start = parseDate(match[1]);
+    const end = parseDate(match[2]);
+    if (!start || !end) continue;
+    const rest = text.slice(match.index + match[0].length, match.index + match[0].length + 80);
+    let sales: number | undefined;
+    let vat: number | undefined;
+    let surtax: number | undefined;
+    let taken = 0;
+    for (const token of rest.split(/[\s|]+/).filter(Boolean)) {
+      if (parseDate(token)) break;
+      const n = parseNumber(token);
+      if (n === undefined) break;
+      if (taken === 0) sales = n;
+      else if (taken === 1) vat = n;
+      else surtax = n;
+      taken += 1;
+      if (taken === 3) break;
+    }
+    push({ start, end, sales, vat_payable: vat, surtax });
+  }
+  const tokens = text.split(/[\s|]+/).filter(Boolean);
+  for (let i = 0; i < tokens.length - 1; i++) {
+    const start = parseDate(tokens[i]);
+    const end = parseDate(tokens[i + 1]);
+    if (!start || !end) continue;
+    let j = i + 2;
+    const take = () => {
+      if (j >= tokens.length || parseDate(tokens[j]!)) return undefined;
+      const n = parseNumber(tokens[j]!);
+      if (n === undefined) return undefined;
+      j += 1;
+      return n;
+    };
+    push({ start, end, sales: take(), vat_payable: take(), surtax: take() });
+    i = Math.max(i + 1, j - 1);
+  }
+  return found;
 }
 
 export function parseSsText(text: string): Extraction {
@@ -174,8 +272,8 @@ function parseVat(rows: string[][]): Extraction {
   if (!periods.length) {
     const start = parseDate(labelValue(rows, ["所属期起", "税款所属期起", "费款所属期起"]));
     const end = parseDate(labelValue(rows, ["所属期止", "税款所属期止", "费款所属期止"]));
-    const sales = parseNumber(labelValue(rows, ["销售额", "计税销售额", "应税销售额"]));
-    const vat = parseNumber(labelValue(rows, ["应纳税额", "本期应补（退）税额", "本期应补(退)税额", "应补退税额"]));
+    const sales = parseAmount(labelValue(rows, ["销售额", "计税销售额", "应税销售额"]));
+    const vat = parseAmount(labelValue(rows, ["应纳税额", "本期应补（退）税额", "本期应补(退)税额", "应补退税额"]));
     const surtax = sumSurtax(rows);
     if (start || sales !== undefined || vat !== undefined) {
       periods.push({ start: start || "", end: end || "", sales, vat_payable: vat, surtax });
@@ -224,11 +322,11 @@ function readVatPeriods(rows: string[][], warnings: string[]): VatPeriod[] {
     const row = rows[r] ?? [];
     if (row.every((c) => !String(c).trim())) continue;
     if (norm(row.join("")).includes("合计") && periods.length) continue;
-    const start = parseDate(row[iStart] ?? "") || "";
-    const end = parseDate(row[iEnd] ?? "") || "";
-    const sales = iSales >= 0 ? parseNumber(row[iSales]) : undefined;
-    const vat = iVat >= 0 ? parseNumber(row[iVat]) : undefined;
-    const surtax = iSurtax >= 0 ? parseNumber(row[iSurtax]) : undefined;
+    const start = cellDate(row[iStart]) || "";
+    const end = cellDate(row[iEnd]) || "";
+    const sales = iSales >= 0 ? parseAmount(row[iSales]) : undefined;
+    const vat = iVat >= 0 ? parseAmount(row[iVat]) : undefined;
+    const surtax = iSurtax >= 0 ? parseAmount(row[iSurtax]) : undefined;
     if (!start && sales === undefined && vat === undefined) continue;
     periods.push({ start, end, sales, vat_payable: vat, surtax });
   }

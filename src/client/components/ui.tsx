@@ -19,9 +19,9 @@ const buttonStyles = cva(
   },
 );
 
-export function Button({ className, variant, asChild, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & VariantProps<typeof buttonStyles> & { asChild?: boolean }) {
+export function Button({ className, variant, asChild, type, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & VariantProps<typeof buttonStyles> & { asChild?: boolean }) {
   const Comp = asChild ? Slot : "button";
-  return <Comp className={cn(buttonStyles({ variant }), className)} {...props} />;
+  return <Comp className={cn(buttonStyles({ variant }), className)} type={asChild ? undefined : type ?? "button"} {...props} />;
 }
 
 export const fieldClass = "w-full rounded-[11px] border border-[#d8e1ef] bg-white px-3 py-2.5 text-sm text-ink outline-none placeholder:text-[#526987] focus:border-brand focus:ring-2 focus:ring-[#a8c1ff] disabled:bg-[#f3f6fb] disabled:text-[#3e4e68]";

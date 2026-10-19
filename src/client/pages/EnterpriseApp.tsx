@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { DISCLAIMER } from "@shared/rules/evaluate";
 import { api, putFile } from "../lib/api";
-import { compressImage, extractionFromPdfText, maybeConvertHeic, parseSpreadsheet, readPdf } from "../lib/files";
+import { compressImage, extractionFromPdfText, maybeConvertHeic, parseSpreadsheet, readPdf, textExtractionUseful } from "../lib/files";
 import { recognizePages } from "../lib/vision";
 import { Banner, BrandMark, Button, Card, Input, Label, PageHeader, Textarea, TierBadge } from "../components/ui";
 import { ChangePasswordPage } from "./AuthPages";
@@ -138,6 +138,29 @@ async function registerAndUpload(kind: "vat" | "social_security", file: File, on
     } else {
       source = "pdf_text";
       extraction = extractionFromPdfText(pdf.text, file.name);
+      if (!textExtractionUseful(kind, extraction)) {
+        onState("正在调用视觉模型");
+        const rendered = await pdf.renderPages();
+        const images: Blob[] = [];
+        for (const page of rendered) images.push(await compressImage(page, 2_500_000));
+        const vision = images.length ? await recognizePages(kind, images) : null;
+        const note = vision?.parse_note || "";
+        const unconfigured = note.includes("未配置视觉模型");
+        const failed = note.includes("视觉识别失败");
+        const textHasSome = Boolean(extraction.company_name || extraction.uscc || extraction.periods?.length);
+        if (!vision || unconfigured || (failed && textHasSome)) {
+          extraction = extraction;
+        } else {
+          if (!vision.company_name && extraction.company_name) vision.company_name = extraction.company_name;
+          if (!vision.uscc && extraction.uscc) {
+            vision.uscc = extraction.uscc;
+            vision.uscc_valid = extraction.uscc_valid;
+          }
+          extraction = vision;
+          source = "pdf_scan";
+          derived.push(...images);
+        }
+      }
     }
   } else if (/\.(jpe?g|png|heic|webp)$/i.test(file.name) || file.type.startsWith("image/")) {
     onState("正在压缩图片");
@@ -180,6 +203,7 @@ function UploadPage({ me }: { me: Me }) {
   const [files, setFiles] = useState<LocalFile[]>([]);
   const fileSeq = useRef(0);
   const [error, setError] = useState("");
+  const [copied, setCopied] = useState("");
   const navigate = useNavigate();
   async function onPick(kind: "vat" | "social_security", list: FileList | null) {
     if (!list?.length) return;
@@ -199,6 +223,11 @@ function UploadPage({ me }: { me: Me }) {
   }
   async function submit(manual: boolean) {
     setError("");
+    const status = me.enterprise?.status || "";
+    if (!["待上传", "识别中", "需补传"].includes(status)) {
+      setError(manual ? "当前状态不能把资料交给顾问" : "当前状态不能提交资料");
+      return;
+    }
     try {
       const res = await api<{ status: string }>("/api/submit", { method: "POST", body: JSON.stringify({ manual }) });
       navigate(res.status === "已发布" ? "/app/report" : "/app");
@@ -216,7 +245,15 @@ function UploadPage({ me }: { me: Me }) {
           <div>
             <h2 className="font-semibold text-navy">资料在电脑上？</h2>
             <p className="text-sm text-muted">复制链接，用电脑浏览器或电脑版微信打开，登录后上传。</p>
-            <Button type="button" variant="outline" className="mt-3" onClick={() => navigator.clipboard.writeText(link)}>复制上传链接</Button>
+            <Button type="button" variant="outline" className="mt-3" data-testid="copy-upload-link" onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(link);
+                setCopied("已复制上传链接");
+              } catch {
+                setCopied("浏览器没有开放剪贴板，请手动复制地址栏");
+              }
+            }}>复制上传链接</Button>
+            {copied ? <p className="mt-2 text-sm" data-testid="copy-upload-result">{copied}</p> : null}
           </div>
         </div>
       </Card>
@@ -264,6 +301,7 @@ function ReportPage() {
   const [data, setData] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
+  const [bookError, setBookError] = useState("");
   useEffect(() => {
     api<Record<string, unknown>>("/api/report").then(setData).catch((err) => setError(err.message));
   }, []);
@@ -282,11 +320,19 @@ function ReportPage() {
   async function book(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = new FormData(e.currentTarget);
-    await api("/api/appointments", {
-      method: "POST",
-      body: JSON.stringify({ slot_pref: form.get("slot"), topic: form.get("topic"), note: form.get("note") }),
-    });
-    setSent(true);
+    const slot = String(form.get("slot") || "");
+    const topic = String(form.get("topic") || "");
+    const note = String(form.get("note") || "");
+    setBookError("");
+    try {
+      await api("/api/appointments", {
+        method: "POST",
+        body: JSON.stringify({ slot_pref: slot, topic, note }),
+      });
+      setSent(true);
+    } catch (err) {
+      setBookError(err instanceof Error ? err.message : "预约失败");
+    }
   }
   return (
     <div className="space-y-4 pb-8" data-testid="report-page">
@@ -334,6 +380,7 @@ function ReportPage() {
         <Textarea name="note" placeholder="可选备注" />
         <Button type="submit" data-testid="book">提交预约</Button>
         {sent ? <Banner>已提交，顾问会按您留的手机号联系。</Banner> : null}
+        {bookError ? <Banner tone="error">{bookError}</Banner> : null}
       </form>
     </div>
   );
@@ -343,16 +390,28 @@ function SettingsPage() {
   const navigate = useNavigate();
   const [message, setMessage] = useState("");
   async function revoke() {
-    await api("/api/privacy/revoke", { method: "POST", body: "{}" });
-    setMessage("授权已撤回，资料将在 7 天内删除。");
+    try {
+      await api("/api/privacy/revoke", { method: "POST", body: "{}" });
+      setMessage("授权已撤回，资料将在 7 天内删除。");
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "撤回失败");
+    }
   }
   async function remove() {
-    await api("/api/privacy/delete-request", { method: "POST", body: "{}" });
-    setMessage("已提交删除申请。");
+    try {
+      await api("/api/privacy/delete-request", { method: "POST", body: "{}" });
+      setMessage("已提交删除申请。");
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "删除申请失败");
+    }
   }
   async function logout() {
-    await api("/api/auth/logout", { method: "POST", body: "{}" });
-    navigate("/login");
+    try {
+      await api("/api/auth/logout", { method: "POST", body: "{}" });
+      navigate("/login");
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "退出失败");
+    }
   }
   return (
     <div className="space-y-4">
