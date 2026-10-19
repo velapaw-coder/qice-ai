@@ -5,7 +5,7 @@ import { parseRule } from "../../shared/rules/schema";
 import { normalizeSuggestedRule } from "../../shared/rules/suggest";
 import { emptyModelSlotRejection, MODEL_SLOT_KEYS } from "../../shared/modelSlots";
 import { adoptBlockedReason } from "../../shared/policyDraft";
-import { auditActionLabel, extractPolicyLinks, junkTitleReason, policyLevelFromRegions } from "../../shared/policyPage";
+import { auditActionLabel, cleanStoredDraftText, crawlSourceLabel, extractPolicyLinks, junkTitleReason, policyLevelFromRegions, policyLinkCountLabel } from "../../shared/policyPage";
 import { assistantMessageText, makeVisionProbe, visionProbeFailure, visionProbePassed } from "../../shared/visionProbe";
 import type { PolicyRule } from "../../shared/rules/types";
 import { cityFromRegion, entityFromUscc, isValidUscc, regionFromUscc } from "../../shared/uscc";
@@ -967,7 +967,13 @@ adminRoutes.post("/admin/policy-sources/:id/test", async (c) => {
     const res = await fetch(source.list_url, { headers: { "user-agent": "QiceAIPolicyBot/1.0" }, redirect: "follow", signal: AbortSignal.timeout(8_000) });
     const html = (await res.text()).slice(0, 80_000);
     const found = extractPolicyLinks(html, source.list_url, source.link_pattern || "");
-    const message = res.ok ? `试抓成功，发现 ${found.length} 条政策链接` : `试抓失败 HTTP ${res.status}`;
+    const label = policyLinkCountLabel(found.length);
+    if (res.ok) {
+      await c.env.DB.prepare("UPDATE policy_sources SET last_status = ?, consecutive_failures = 0, last_crawled_at = ? WHERE id = ?")
+        .bind(label, nowIso(), c.req.param("id"))
+        .run();
+    }
+    const message = res.ok ? `试抓成功，${label}` : `试抓失败 HTTP ${res.status}`;
     return c.json({ ok: res.ok, status: res.status, links: found.length, ms: Date.now() - started, message });
   } catch (err) {
     const detail = String(err);
@@ -987,17 +993,11 @@ adminRoutes.post("/admin/crawl-runs", async (c) => {
 
 adminRoutes.get("/admin/crawl-runs", async (c) => {
   await closeStaleCrawlRuns(c.env.DB);
-  const rows = await c.env.DB.prepare("SELECT * FROM crawl_runs ORDER BY started_at DESC LIMIT 50").all<{ errors_json?: string; source_name?: string }>();
-  const runs = (rows.results || []).map((row) => {
-    let sourceName = "";
-    try {
-      const parsed = JSON.parse(row.errors_json || "{}") as { source_name?: string } | unknown[];
-      if (parsed && !Array.isArray(parsed)) sourceName = parsed.source_name || "";
-    } catch {
-      sourceName = "";
-    }
-    return { ...row, source_name: sourceName || "—" };
-  });
+  const rows = await c.env.DB.prepare("SELECT * FROM crawl_runs ORDER BY started_at DESC LIMIT 50").all<{ type?: string; errors_json?: string }>();
+  const runs = (rows.results || []).map((row) => ({
+    ...row,
+    source_name: crawlSourceLabel({ type: row.type, errors_json: row.errors_json }),
+  }));
   return c.json({ runs });
 });
 
@@ -1050,6 +1050,33 @@ adminRoutes.post("/admin/policy-drafts/bulk-reject", async (c) => {
   }
   await audit(c.env.DB, c.get("userId"), "policy_draft.bulk_reject", "policy_draft", ids[0] || "batch", clientIp(c.req.raw), { rejected, junk: Boolean(body?.junk) });
   return c.json({ rejected });
+});
+
+adminRoutes.post("/admin/policy-drafts/reclean", async (c) => {
+  if (!adminOnly(c.get("role"))) return c.json({ error: "只有管理员可以清洗草稿原文" }, 403);
+  const rows = await c.env.DB.prepare(
+    "SELECT id, raw_text_r2_key FROM policy_drafts WHERE raw_text_r2_key IS NOT NULL AND raw_text_r2_key != '' ORDER BY created_at DESC LIMIT 200",
+  ).all<{ id: string; raw_text_r2_key: string }>();
+  let cleaned = 0;
+  let scanned = 0;
+  for (const row of rows.results || []) {
+    scanned += 1;
+    const obj = await c.env.BUCKET.get(row.raw_text_r2_key);
+    if (!obj) continue;
+    const original = await obj.text();
+    const next = cleanStoredDraftText(original);
+    if (!next.trim() || next === original) continue;
+    await c.env.BUCKET.put(row.raw_text_r2_key, next, { httpMetadata: { contentType: "text/plain; charset=utf-8" } });
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(next.slice(0, 60_000)));
+    const hash = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+    await c.env.DB.prepare("UPDATE policy_drafts SET content_hash = ? WHERE id = ?").bind(hash, row.id).run();
+    cleaned += 1;
+  }
+  const message = scanned
+    ? `已检查 ${scanned} 份草稿原文，改写了 ${cleaned} 份。需要再清洗时再点一次。`
+    : "没有可清洗的草稿原文";
+  await audit(c.env.DB, c.get("userId"), "policy_draft.reclean", "policy_draft", "batch", clientIp(c.req.raw), { cleaned, scanned });
+  return c.json({ cleaned, scanned, message });
 });
 
 adminRoutes.get("/admin/policy-drafts/:id", async (c) => {

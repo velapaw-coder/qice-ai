@@ -3,12 +3,15 @@ import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, usePa
 import { zipSync } from "fflate";
 import { MODEL_SLOT_KEYS } from "@shared/modelSlots";
 import { adoptBlockedReason } from "@shared/policyDraft";
+import { formatShanghai } from "@shared/policyPage";
 import { deriveClientKey } from "@shared/password";
 import { formatPublicBand, parseBands, validateBands, type EstimateBand } from "@shared/bands";
 import { formatRange } from "@shared/rules/evaluate";
 import { api } from "../lib/api";
 import { Banner, BrandMark, Button, Card, EmptyState, Input, Label, PageHeader, StatCard, Textarea, TierBadge } from "../components/ui";
 import { ChangePasswordPage } from "./AuthPages";
+
+const filterSelect = "min-w-[9.5rem] shrink-0 rounded-[11px] border border-[#d8e1ef] bg-white px-3 py-2.5 text-[15px] leading-6 text-ink";
 
 const groups = [
   { label: "工作台", items: [
@@ -226,7 +229,7 @@ function Todos() {
                         <tr key={row.id}>
                           <td><Link className="font-semibold text-[#1e4fc8]" to={todoHref(group.key, row)}>{row.name || row.title || "未命名"}</Link></td>
                           <td className="text-muted">{row.contact_phone || "—"} {row.city || ""}</td>
-                          <td className="text-muted">{row.time?.slice(0, 16).replace("T", " ") || "—"}</td>
+                          <td className="whitespace-nowrap text-muted">{formatShanghai(row.time)}</td>
                           <td>{group.key === "appointments" ? <button type="button" className="whitespace-nowrap text-sm font-semibold text-[#1e4fc8]" data-testid="appointment-done" onClick={() => run(notify, async () => { await api(`/api/admin/appointments/${row.id}`, { method: "PATCH", body: JSON.stringify({ status: "已联系" }) }); reload(); return `已把「${row.name || row.title || "这条预约"}」标为已联系`; })}>已联系</button> : null}</td>
                         </tr>
                       ))}
@@ -258,7 +261,7 @@ function EnterpriseList() {
       </div>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <Input className="sm:min-w-0 sm:flex-1" placeholder="企业名或手机号" value={q} onChange={(e) => setQ(e.target.value)} data-testid="enterprise-search" />
-        <select className="rounded-[11px] border border-[#d8e1ef] bg-white px-3" value={status} onChange={(e) => setStatus(e.target.value)}>
+        <select className={filterSelect} value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">全部状态</option>
           {STATUSES.map((item) => <option key={item}>{item}</option>)}
         </select>
@@ -691,13 +694,13 @@ function Policies() {
       </Card>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <Input className="sm:min-w-0 sm:flex-1" placeholder="政策名称或编码" value={q} onChange={(e) => setQ(e.target.value)} data-testid="policy-search" />
-        <select className="rounded-[11px] border border-[#d8e1ef] bg-white px-3" data-testid="policy-status" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); report(e.target.value ? `正在只看「${e.target.value}」政策` : "已显示全部状态"); }}>
+        <select className={filterSelect} data-testid="policy-status" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); report(e.target.value ? `正在只看「${e.target.value}」政策` : "已显示全部状态"); }}>
           <option value="">全部状态</option>
           <option>草稿</option>
           <option>启用</option>
           <option>停用</option>
         </select>
-        <select className="rounded-[11px] border border-[#d8e1ef] bg-white px-3" data-testid="policy-level" value={level} onChange={(e) => { setLevel(e.target.value); setPage(1); report(e.target.value ? `正在只看「${e.target.value}」层级` : "已显示全部层级"); }}>
+        <select className={filterSelect} data-testid="policy-level" value={level} onChange={(e) => { setLevel(e.target.value); setPage(1); report(e.target.value ? `正在只看「${e.target.value}」层级` : "已显示全部层级"); }}>
           <option value="">全部层级</option>
           <option>国家</option>
           <option>省</option>
@@ -792,9 +795,12 @@ function PolicyEdit() {
   }
   return (
     <div className="space-y-4">
+      <div>
+        <Link to="/admin/policies" className="text-sm font-semibold text-[#1e4fc8]" data-testid="policy-back">返回政策库</Link>
+        <PageHeader kicker="政策" title={data.policy.name} description={`状态 ${data.policy.status}。条件和估算直接改 JSON，保存时会校验。`} />
+      </div>
       <Card>
-        <h1 className="text-xl font-bold">{data.policy.name}</h1>
-        <p className="text-sm text-muted">状态 {data.policy.status}。当前版本 <span data-testid="policy-version">{data.policy.current_version}</span>。条件和估算直接改 JSON，保存时会校验。</p>
+        <p className="text-sm text-muted">当前版本 <span data-testid="policy-version">{data.policy.current_version}</span></p>
         <Textarea className="mt-3 min-h-80 font-mono text-xs" value={text} onChange={(e) => setText(e.target.value)} data-testid="policy-json-edit" />
         <div className="mt-3 flex flex-wrap gap-2">
           <Button type="button" onClick={save} data-testid="save-policy-version">保存新版本</Button>
@@ -802,7 +808,7 @@ function PolicyEdit() {
         </div>
         {msg ? <p className="mt-2 text-sm" data-testid="policy-save-msg">{msg}</p> : null}
         <ul className="mt-3 space-y-1 text-sm" data-testid="policy-versions">
-          {(versions.data?.versions || []).map((version) => <li key={version.version}>版本 {version.version} · {version.created_at.slice(0, 19).replace("T", " ")}</li>)}
+          {(versions.data?.versions || []).map((version) => <li key={version.version}>版本 {version.version} · {formatShanghai(version.created_at)}</li>)}
         </ul>
       </Card>
       <Card>
@@ -830,6 +836,7 @@ function Drafts() {
   const { data, error, reload } = useData<{ drafts: { id: string; title: string; status: string; junk?: boolean; junk_reason?: string }[]; total: number; page_size: number }>(`/api/admin/policy-drafts?page=${page}&q=${encodeURIComponent(query)}&status=${encodeURIComponent(status)}&junk=${junk ? "1" : "0"}`);
   const [text, setText] = useState("");
   const [msg, setMsg] = useState("");
+  const admin = useIsAdmin();
   const report = (value: string) => setMsg(value);
   const total = data?.total || 0;
   const pages = Math.max(1, Math.ceil(total / (data?.page_size || 20)));
@@ -858,6 +865,14 @@ function Drafts() {
       setListMsg(err instanceof Error ? err.message : "批量驳回失败");
     }
   }
+  async function recleanStored() {
+    try {
+      const res = await api<{ cleaned: number; scanned: number; message?: string }>("/api/admin/policy-drafts/reclean", { method: "POST", body: "{}" });
+      setListMsg(res.message || `已检查 ${res.scanned} 份草稿原文，改写了 ${res.cleaned} 份`);
+    } catch (err) {
+      setListMsg(err instanceof Error ? err.message : "清洗失败");
+    }
+  }
   return (
     <div className="space-y-3" data-testid="policy-drafts">
       <PageHeader kicker="政策" title="草稿" description="粘贴政策原文，生成待审核草稿。自动抓取的结果也会出现在这里。" />
@@ -878,7 +893,7 @@ function Drafts() {
       </Card>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <Input className="sm:min-w-0 sm:flex-1" placeholder="草稿标题" value={q} onChange={(e) => setQ(e.target.value)} data-testid="draft-search" />
-        <select className="rounded-[11px] border border-[#d8e1ef] bg-white px-3" data-testid="draft-status" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); setListMsg(e.target.value ? `正在只看「${e.target.value}」草稿` : "已显示全部状态"); }}>
+        <select className={filterSelect} data-testid="draft-status" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); setListMsg(e.target.value ? `正在只看「${e.target.value}」草稿` : "已显示全部状态"); }}>
           <option value="">全部状态</option>
           <option>待审核</option>
           <option>已采纳</option>
@@ -891,6 +906,7 @@ function Drafts() {
       <div className="flex flex-wrap gap-2">
         <Button type="button" variant="outline" data-testid="bulk-reject" onClick={rejectSelected}>批量驳回</Button>
         <Button type="button" variant="outline" data-testid="bulk-reject-junk" onClick={rejectJunk}>驳回全部疑似无效</Button>
+        {admin ? <Button type="button" variant="outline" data-testid="reclean-drafts" onClick={recleanStored}>清洗已存原文</Button> : null}
       </div>
       {listMsg ? <p className="text-sm" data-testid="draft-list-msg">{listMsg}</p> : null}
       {data && data.drafts.length === 0 ? <EmptyState title={junk ? "没有疑似无效草稿" : "还没有草稿"}>{junk ? "当前筛选下没有标题像导航、脚本或网站名的草稿。" : "粘贴原文，或等抓取来源产出待审核记录。"}</EmptyState> : (
@@ -1018,6 +1034,7 @@ function Sources() {
                   report(value);
                 }, async () => {
                   const res = await api<{ message?: string }>(`/api/admin/policy-sources/${source.id}/test`, { method: "POST", body: "{}" });
+                  await reload();
                   return res.message || `${source.name} 试抓完成`;
                 });
               }}>{testingId === source.id ? "试抓中…" : "试抓"}</Button>
@@ -1061,7 +1078,7 @@ function Crawls() {
         <div className="overflow-x-auto rounded-[18px] border border-line bg-white shadow-[0_10px_32px_#1d46800a]">
           <table className="app-table">
             <thead><tr><th>类型</th><th>来源</th><th>状态</th><th>开始</th><th>结束</th><th>新草稿</th><th>失败来源</th></tr></thead>
-            <tbody>{(data?.runs || []).map((run) => <tr key={String(run.id)}><td>{typeLabel(String(run.type))}</td><td>{String(run.source_name || "—")}</td><td>{run.status}</td><td className="whitespace-nowrap">{String(run.started_at || "").replace("T", " ").slice(0, 19) || "—"}</td><td className="whitespace-nowrap">{String(run.finished_at || "").replace("T", " ").slice(0, 19) || "—"}</td><td>{run.drafts_created}</td><td>{run.sources_failed}</td></tr>)}</tbody>
+            <tbody>{(data?.runs || []).map((run) => <tr key={String(run.id)}><td>{typeLabel(String(run.type))}</td><td>{String(run.source_name || "—")}</td><td>{run.status}</td><td className="whitespace-nowrap">{formatShanghai(String(run.started_at || ""))}</td><td className="whitespace-nowrap">{formatShanghai(String(run.finished_at || ""))}</td><td>{run.drafts_created}</td><td>{run.sources_failed}</td></tr>)}</tbody>
           </table>
         </div>
       )}
@@ -1184,17 +1201,12 @@ function AiSettingsBody() {
           {(data?.providers || []).map((provider) => (
             <li key={provider.id} className="rounded-xl border border-line p-2">
               <b>{provider.name}</b> · {provider.vendor} · {provider.model} · sk-****{provider.api_key_last4}
-              <div className="mt-2 flex flex-wrap items-start gap-3">
-                <div>
-                  <Button type="button" variant="outline" data-testid="test-text" onClick={() => { setProbe(provider.id, "text", `正在测试「${provider.name}」的文本连通…`); run((value) => setProbe(provider.id, "text", value), async () => { const res = await api<{ message?: string }>(`/api/admin/ai-providers/${provider.id}/test?mode=text`, { method: "POST", body: "{}" }); reload(); return res.message || `${provider.name} 文本测试完成`; }); }}>测试文本</Button>
-                  <p className="mt-1 max-w-xs text-sm" data-testid="test-text-result">{probes[provider.id]?.text || "文本测试结果会显示在这里"}</p>
-                </div>
-                <div>
-                  <Button type="button" variant="outline" data-testid="test-vision" onClick={() => { setProbe(provider.id, "vision", `正在测试「${provider.name}」能不能看图…`); run((value) => setProbe(provider.id, "vision", value), async () => { const res = await api<{ message?: string }>(`/api/admin/ai-providers/${provider.id}/test?mode=vision`, { method: "POST", body: "{}" }); reload(); return res.message || `${provider.name} 视觉测试完成`; }); }}>测试视觉</Button>
-                  <p className="mt-1 max-w-xs text-sm" data-testid="test-vision-result">{probes[provider.id]?.vision || "视觉测试结果会显示在这里"}</p>
-                </div>
+              <div className="mt-2 space-y-2">
+                <Button type="button" variant="outline" data-testid="test-text" onClick={() => { setProbe(provider.id, "text", `正在测试「${provider.name}」的文本连通…`); run((value) => setProbe(provider.id, "text", value), async () => { const res = await api<{ message?: string; ms?: number }>(`/api/admin/ai-providers/${provider.id}/test?mode=text`, { method: "POST", body: "{}" }); reload(); const timing = typeof res.ms === "number" ? `（${res.ms}ms）` : ""; return `${res.message || `${provider.name} 文本测试完成`}${timing}`; }); }}>测试文本</Button>
+                <p className="text-sm" data-testid="test-text-result">文本：{probes[provider.id]?.text || "尚未测试"}</p>
+                <Button type="button" variant="outline" data-testid="test-vision" onClick={() => { setProbe(provider.id, "vision", `正在测试「${provider.name}」能不能看图…`); run((value) => setProbe(provider.id, "vision", value), async () => { const res = await api<{ message?: string; ms?: number }>(`/api/admin/ai-providers/${provider.id}/test?mode=vision`, { method: "POST", body: "{}" }); reload(); const timing = typeof res.ms === "number" ? `（${res.ms}ms）` : ""; return `${res.message || `${provider.name} 视觉测试完成`}${timing}`; }); }}>测试视觉</Button>
+                <p className="text-sm" data-testid="test-vision-result">视觉：{probes[provider.id]?.vision || "尚未测试"}</p>
               </div>
-              {provider.last_test_msg ? <p className="text-muted">{provider.last_test_msg}</p> : null}
             </li>
           ))}
           {data && data.providers.length === 0 ? <li className="text-muted">还没有模型。Excel 和文本 PDF 仍可按表头规则解析。</li> : null}
@@ -1318,7 +1330,7 @@ function AuditBody() {
         <div className="overflow-x-auto rounded-[18px] border border-line bg-white shadow-[0_10px_32px_#1d46800a]" data-testid="audit-log">
           <table className="app-table">
             <thead><tr><th>时间</th><th>动作</th><th>对象</th></tr></thead>
-            <tbody>{(data?.logs || []).map((log) => <tr key={log.id}><td className="whitespace-nowrap text-muted">{log.created_at.replace("T", " ").slice(0, 19)}</td><td>{log.action_label || log.action}</td><td className="text-muted">{log.target_name || "—"}</td></tr>)}</tbody>
+            <tbody>{(data?.logs || []).map((log) => <tr key={log.id}><td className="whitespace-nowrap text-muted">{formatShanghai(log.created_at)}</td><td>{log.action_label || log.action}</td><td className="text-muted">{log.target_name || "—"}</td></tr>)}</tbody>
           </table>
         </div>
       )}
@@ -1414,7 +1426,7 @@ function SettingsBody() {
         <Input name="consultant_wechat" defaultValue={data.settings.consultant_wechat || ""} />
         <Label>企业微信机器人 webhook</Label>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Input className="sm:min-w-0 sm:flex-1" name="wecom_webhook" type={webhookShown ? "text" : "password"} value={webhookText} onChange={(e) => setWebhookText(e.target.value)} placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..." autoComplete="off" data-testid="webhook-url" />
+          <Input key={webhookShown ? "webhook-shown" : "webhook-hidden"} className="sm:min-w-0 sm:flex-1" name="wecom_webhook" type={webhookShown ? "text" : "password"} value={webhookText} onChange={(e) => setWebhookText(e.target.value)} placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..." autoComplete="off" data-testid="webhook-url" />
           <Button type="button" variant="outline" data-testid="webhook-toggle" onClick={async () => {
             if (webhookShown) {
               setWebhookShown(false);
@@ -1431,6 +1443,7 @@ function SettingsBody() {
             }
           }}>{webhookShown ? "隐藏" : "显示"}</Button>
         </div>
+        {webhookShown ? <p className="break-all text-sm" data-testid="webhook-revealed">{webhookText || "尚未配置"}</p> : null}
         {webhookNote ? <p className="text-sm" data-testid="webhook-note">{webhookNote}</p> : <p className="text-sm text-muted" data-testid="webhook-note">webhook 默认隐藏</p>}
         <div>
           <h2 className="font-semibold">企业可见预估档</h2>
