@@ -1,0 +1,15 @@
+node_modules
+uploads/__AI_PRD_v1_6d66.md
+uploads/business_plan_MVP_V1_1776.pdf
+dist
+.wrangler
+.dev.vars
+!.dev.vars.example
+test-results
+playwright-report
+blob-report
+playwright/.cache
+*.log
+.DS_Store
+worker-configuration.d.ts
+/tmp

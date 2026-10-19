@@ -1,0 +1,62 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "qice-ai",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-10-19",
+  "upload_source_maps": true,
+  "observability": {
+    "enabled": true,
+    "traces": {
+      "enabled": true
+    }
+  },
+  "assets": {
+    "directory": "./dist/client",
+    "not_found_handling": "single-page-application",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "qice-ai",
+      "database_id": "00000000-0000-0000-0000-000000000001",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "qice-files"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "CRAWL_QUEUE",
+        "queue": "qice-crawl"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "qice-crawl",
+        "max_batch_size": 1,
+        "max_retries": 2,
+        "max_batch_timeout": 1
+      }
+    ]
+  },
+  "ratelimits": [
+    {
+      "name": "REGISTER_LIMITER",
+      "namespace_id": "1001",
+      "simple": {
+        "limit": 5,
+        "period": 60
+      }
+    }
+  ],
+  "triggers": {
+    "crons": ["0 18 * * *", "0 18 1 * *"]
+  }
+}

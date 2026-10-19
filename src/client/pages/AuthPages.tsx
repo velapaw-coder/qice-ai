@@ -1,0 +1,174 @@
+import { useEffect, useState, type FormEvent } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { deriveClientKey, passwordError, phoneError } from "@shared/password";
+import { api } from "../lib/api";
+import { Banner, Button, Card, Input, Label } from "../components/ui";
+
+function Shell({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen bg-bg">
+      <header className="border-b border-line bg-white">
+        <div className="mx-auto flex h-16 w-full max-w-lg items-center justify-between px-4">
+          <Link to="/" className="text-xl font-extrabold tracking-tight text-navy">企策AI</Link>
+          <Link to="/login" className="text-sm font-semibold text-brand">登录</Link>
+        </div>
+      </header>
+      <main className="mx-auto w-full max-w-lg px-4 py-8">
+        <h1 className="mb-4 text-2xl font-bold text-navy">{title}</h1>
+        <Card>{children}</Card>
+      </main>
+    </div>
+  );
+}
+
+export function RegisterPage() {
+  const navigate = useNavigate();
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    const company = String(form.get("company_name") || "").trim();
+    const contact = String(form.get("contact_name") || "").trim();
+    const phone = String(form.get("phone") || "").trim();
+    const password = String(form.get("password") || "");
+    const again = String(form.get("password2") || "");
+    if (company.length < 2 || company.length > 60) return setError("企业名称需要 2–60 个字");
+    if (contact.length < 2 || contact.length > 20) return setError("联系人需要 2–20 个字");
+    if (phoneError(phone)) return setError(phoneError(phone)!);
+    if (passwordError(password)) return setError(passwordError(password)!);
+    if (password !== again) return setError("两次密码不一致");
+    setBusy(true);
+    setError("");
+    try {
+      const client_key = await deriveClientKey(phone, password);
+      await api("/api/auth/register", {
+        method: "POST",
+        body: JSON.stringify({
+          company_name: company,
+          contact_name: contact,
+          phone,
+          client_key,
+          company_website: String(form.get("company_website") || ""),
+        }),
+      });
+      navigate("/app/upload");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "注册失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Shell title="注册企业账号">
+      <p className="mb-4 text-sm text-muted">只需要企业名称、联系人、手机号和密码。信用代码和地区会从您上传的资料里识别。</p>
+      <form onSubmit={onSubmit} className="space-y-3" data-testid="register-form">
+        <div className="hidden" aria-hidden="true">
+          <input name="company_website" tabIndex={-1} autoComplete="off" />
+        </div>
+        <Label>企业名称</Label>
+        <Input name="company_name" required minLength={2} maxLength={60} placeholder="与申报表上的纳税人名称一致" data-testid="company" />
+        <Label>联系人</Label>
+        <Input name="contact_name" required minLength={2} maxLength={20} data-testid="contact" />
+        <Label>手机号</Label>
+        <Input name="phone" required inputMode="numeric" pattern="1[0-9]{10}" placeholder="用于登录和顾问联系" data-testid="phone" />
+        <Label>密码</Label>
+        <Input name="password" type="password" required minLength={8} autoComplete="new-password" data-testid="password" />
+        <Label hint="至少 8 位，包含字母和数字">再输入一次</Label>
+        <Input name="password2" type="password" required data-testid="password2" />
+        {error ? <Banner tone="error">{error}</Banner> : null}
+        <Button className="w-full" disabled={busy} data-testid="register-submit">{busy ? "正在创建账号…" : "注册并上传资料"}</Button>
+      </form>
+      <p className="mt-4 text-sm text-muted">已有账号？<Link className="text-brand" to="/login">去登录</Link></p>
+    </Shell>
+  );
+}
+
+export function LoginPage() {
+  const navigate = useNavigate();
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [contact, setContact] = useState({ phone: "", wechat: "" });
+  useEffect(() => {
+    api<{ phone: string; wechat: string }>("/api/auth/contact").then(setContact).catch(() => undefined);
+  }, []);
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    const phone = String(form.get("phone") || "").trim();
+    const password = String(form.get("password") || "");
+    setBusy(true);
+    setError("");
+    try {
+      const client_key = await deriveClientKey(phone, password);
+      const res = await api<{ role: string; must_change_password: boolean }>("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ phone, client_key, company_website: String(form.get("company_website") || "") }),
+      });
+      if (res.must_change_password) navigate(res.role === "enterprise" ? "/app/change-password" : "/admin/change-password");
+      else navigate(res.role === "enterprise" ? "/app" : "/admin");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "登录失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Shell title="登录">
+      <form onSubmit={onSubmit} className="space-y-3" data-testid="login-form">
+        <div className="hidden" aria-hidden="true"><input name="company_website" tabIndex={-1} autoComplete="off" /></div>
+        <Label>手机号</Label>
+        <Input name="phone" required inputMode="numeric" data-testid="login-phone" />
+        <Label>密码</Label>
+        <Input name="password" type="password" required data-testid="login-password" />
+        {error ? <Banner tone="error">{error}</Banner> : null}
+        <Button className="w-full" disabled={busy} data-testid="login-submit">{busy ? "正在校验…" : "登录"}</Button>
+      </form>
+      <p className="mt-4 text-sm text-muted">
+        忘记密码请联系您的顾问
+        {contact.phone ? `，电话 ${contact.phone}` : ""}
+        {contact.wechat ? `，微信 ${contact.wechat}` : "。顾问联系方式可由管理员在后台配置。"}
+      </p>
+      <p className="mt-2 text-sm"><Link className="text-brand" to="/register">注册企业账号</Link></p>
+    </Shell>
+  );
+}
+
+export function ChangePasswordPage({ next }: { next: string }) {
+  const navigate = useNavigate();
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    const phone = String(form.get("phone") || "").trim();
+    const oldPassword = String(form.get("old") || "");
+    const password = String(form.get("password") || "");
+    if (phoneError(phone) || passwordError(password)) return setError(phoneError(phone) || passwordError(password) || "请检查密码");
+    setBusy(true);
+    try {
+      const old_client_key = await deriveClientKey(phone, oldPassword);
+      const new_client_key = await deriveClientKey(phone, password);
+      await api("/api/auth/change-password", { method: "POST", body: JSON.stringify({ old_client_key, new_client_key }) });
+      navigate(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "修改失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Shell title="修改密码">
+      <form onSubmit={onSubmit} className="space-y-3" data-testid="change-password">
+        <Label>手机号</Label>
+        <Input name="phone" required data-testid="change-phone" />
+        <Label>当前密码或临时密码</Label>
+        <Input name="old" type="password" required data-testid="change-old" />
+        <Label>新密码</Label>
+        <Input name="password" type="password" required data-testid="change-new" />
+        {error ? <Banner tone="error">{error}</Banner> : null}
+        <Button className="w-full" disabled={busy}>保存新密码</Button>
+      </form>
+    </Shell>
+  );
+}

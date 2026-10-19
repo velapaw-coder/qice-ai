@@ -1,0 +1,325 @@
+[
+  {
+    "code": "KEY_HIRE_TAX",
+    "name": "重点群体招用税收扣减",
+    "category": "税收减免",
+    "regions": ["44"],
+    "entity_types": ["enterprise"],
+    "conditions": [
+      {"field": "tax_normal", "op": "eq", "value": true, "level": "hard", "text": "正常申报纳税", "verify": "确认企业是否正常申报纳税"},
+      {"field": "headcount", "op": "gte", "value": 1, "level": "hard", "text": "有参保员工", "verify": "确认参保人数"},
+      {"field": "staff.poverty", "op": "gte", "value": 1, "level": "soft", "text": "招用脱贫人口，签1年以上劳动合同并缴社保", "verify": "核实员工中是否有脱贫人口"},
+      {"field": "staff.unemployed", "op": "gte", "value": 1, "level": "soft", "text": "招用登记失业半年以上人员，签1年以上劳动合同并缴社保", "verify": "核实员工中是否有登记失业半年以上人员"}
+    ],
+    "estimate": {"type": "per_head_capped", "count_field": "staff.key_group", "candidate_field": null, "rate": 7800, "cap_field": "tax_paid_12m"},
+    "cap_tier": null,
+    "basis": "财政部 税务总局 人力资源社会保障部 农业农村部公告2023年第15号；广东省标准待顾问核对",
+    "url": "",
+    "show_when_rejected": false
+  },
+  {
+    "code": "KEY_HIRE_TAX_BACK",
+    "name": "重点群体税收扣减追溯",
+    "category": "税收减免",
+    "regions": ["44"],
+    "entity_types": ["enterprise"],
+    "conditions": [
+      {"field": "tax_normal", "op": "eq", "value": true, "level": "hard", "text": "正常申报纳税"},
+      {"field": "headcount", "op": "gte", "value": 1, "level": "hard", "text": "有参保员工"},
+      {"field": "prior_unclaimed", "op": "eq", "value": true, "level": "soft", "text": "往期符合条件但未享受，且在追溯期限内", "verify": "核实往期是否已享受、是否仍在追溯期限"}
+    ],
+    "estimate": null,
+    "basis": "同重点群体招用税收扣减，追溯口径待顾问核对",
+    "show_when_rejected": false
+  },
+  {
+    "code": "VET_HIRE_TAX",
+    "name": "退役士兵招用税收扣减",
+    "category": "税收减免",
+    "regions": ["44"],
+    "entity_types": ["enterprise"],
+    "conditions": [
+      {"field": "tax_normal", "op": "eq", "value": true, "level": "hard", "text": "正常申报纳税"},
+      {"field": "headcount", "op": "gte", "value": 1, "level": "hard", "text": "有参保员工"},
+      {"field": "staff.veteran", "op": "gte", "value": 1, "level": "soft", "text": "招用自主就业退役士兵，签1年以上劳动合同并缴社保", "verify": "核实员工中是否有自主就业退役士兵（退役证）"}
+    ],
+    "estimate": {"type": "per_head_capped", "count_field": "staff.veteran", "candidate_field": null, "rate": 9000, "cap_field": "tax_paid_12m"},
+    "basis": "财政部 税务总局 退役军人事务部公告2023年第14号；粤财税口径待顾问核对",
+    "show_when_rejected": false
+  },
+  {
+    "code": "VET_HIRE_TAX_BACK",
+    "name": "退役士兵税收扣减追溯",
+    "category": "税收减免",
+    "regions": ["44"],
+    "entity_types": ["enterprise"],
+    "conditions": [
+      {"field": "tax_normal", "op": "eq", "value": true, "level": "hard", "text": "正常申报纳税"},
+      {"field": "headcount", "op": "gte", "value": 1, "level": "hard", "text": "有参保员工"},
+      {"field": "prior_unclaimed_vet", "op": "eq", "value": true, "level": "soft", "text": "往期符合条件但未享受", "verify": "核实退役士兵优惠往期是否已享受"}
+    ],
+    "estimate": null,
+    "basis": "同退役士兵招用税收扣减，追溯口径待顾问核对",
+    "show_when_rejected": false
+  },
+  {
+    "code": "DISABLED_LEVY",
+    "name": "残保金减免",
+    "category": "费用减免",
+    "regions": ["CN"],
+    "entity_types": ["enterprise"],
+    "conditions": [
+      {"field": "headcount", "op": "gte", "value": 31, "level": "hard", "text": "参保人数超过30人（30人及以下暂免征收残保金）", "verify": "确认参保人数是否超过30人"},
+      {"field": "staff.disabled", "op": "gte", "value": 1, "level": "soft", "text": "安排残疾人就业，比例影响减征或免征", "verify": "核实残疾职工人数和安置比例"}
+    ],
+    "estimate": null,
+    "basis": "残疾人就业保障金征收使用管理办法；地方比例待顾问核对",
+    "show_when_rejected": true
+  },
+  {
+    "code": "DISABLED_WAGE_DEDUCT",
+    "name": "残疾人工资加计100%扣除",
+    "category": "税收减免",
+    "regions": ["CN"],
+    "entity_types": ["enterprise"],
+    "conditions": [
+      {"field": "staff.disabled", "op": "gte", "value": 1, "level": "soft", "text": "有残疾职工，签订合同、缴纳社保并通过银行发放工资", "verify": "核实是否有残疾职工，以及合同、社保和银行发薪情况"}
+    ],
+    "estimate": null,
+    "basis": "企业所得税法实施条例及相关公告，待顾问核对文号",
+    "show_when_rejected": false
+  },
+  {
+    "code": "POVERTY_JOB_SUBSIDY",
+    "name": "脱贫人口就业社保岗位补贴",
+    "category": "就业补贴",
+    "regions": ["4403", "4419"],
+    "entity_types": ["enterprise"],
+    "conditions": [
+      {"field": "headcount", "op": "gte", "value": 1, "level": "hard", "text": "有参保员工"},
+      {"field": "staff.poverty", "op": "gte", "value": 1, "level": "soft", "text": "招用脱贫人口，合同期限和社保月数满足当地要求", "verify": "核实脱贫人口人数、合同期限和社保缴纳月数"}
+    ],
+    "estimate": null,
+    "basis": "地方就业补助资金管理办法，标准待按地区配置",
+    "show_when_rejected": false
+  },
+  {
+    "code": "INTERNSHIP_SUBSIDY",
+    "name": "就业见习补贴",
+    "category": "就业补贴",
+    "regions": ["4403", "4419"],
+    "entity_types": ["enterprise"],
+    "conditions": [
+      {"field": "tax_normal", "op": "eq", "value": true, "level": "hard", "text": "正常经营"},
+      {"field": "internship_ready", "op": "eq", "value": true, "level": "soft", "text": "已备案或可申请为见习基地，吸纳离校2年内高校毕业生或16–24岁失业青年", "verify": "核实见习基地备案情况和见习人员"}
+    ],
+    "estimate": null,
+    "basis": "深圳市、东莞市就业见习政策，文号待顾问核对",
+    "show_when_rejected": false
+  },
+  {
+    "code": "GRAD_SS_SUBSIDY",
+    "name": "小微企业招用高校毕业生社保补贴",
+    "category": "社保补贴",
+    "regions": ["4403", "4419"],
+    "entity_types": ["enterprise"],
+    "conditions": [
+      {"field": "size_class", "op": "eq", "value": "small", "level": "hard", "text": "规模为小微", "verify": "确认是否属于小微企业"},
+      {"field": "staff.graduate", "op": "gte", "value": 1, "level": "soft", "text": "招用毕业2年内高校毕业生，签1年以上合同并连续缴社保3个月以上", "verify": "毕业2年内高校毕业生的人数及合同、社保情况"}
+    ],
+    "estimate": {"type": "ss_ratio", "count_field": "staff.graduate", "candidate_field": "young_candidates", "ratio": 0.25, "months": 12, "personal_field": "ss_personal_month", "headcount_field": "headcount"},
+    "basis": "深圳市、东莞市小微企业招用高校毕业生社保补贴，文号待顾问核对",
+    "show_when_rejected": false
+  },
+  {
+    "code": "SKILL_EVAL_SUBSIDY",
+    "name": "职业技能评价补贴",
+    "category": "就业补贴",
+    "regions": ["4403"],
+    "entity_types": ["enterprise"],
+    "conditions": [
+      {"field": "tax_normal", "op": "eq", "value": true, "level": "hard", "text": "本市注册并正常经营"},
+      {"field": "dishonest", "op": "eq", "value": false, "level": "hard", "text": "未被列为严重失信主体", "verify": "核实企业是否被列为严重失信主体"},
+      {"field": "skill_cert", "op": "eq", "value": true, "level": "soft", "text": "职工取得补贴目录内证书，或企业已备案为评价机构", "verify": "职工证书是否在目录内；是否已备案为评价机构"}
+    ],
+    "estimate": null,
+    "basis": "深圳市职业技能评价补贴，标准约200–500元/人，仅后台参考",
+    "show_when_rejected": false
+  },
+  {
+    "code": "APPRENTICE_SUBSIDY",
+    "name": "企业新型学徒制培训补贴",
+    "category": "就业补贴",
+    "regions": ["4403"],
+    "entity_types": ["enterprise"],
+    "conditions": [
+      {"field": "tax_normal", "op": "eq", "value": true, "level": "hard", "text": "正常经营"},
+      {"field": "apprentice_partner", "op": "eq", "value": true, "level": "soft", "text": "与院校或培训机构合作开展学徒培训", "verify": "是否与院校或机构合作开展学徒培训"}
+    ],
+    "estimate": null,
+    "basis": "深圳市企业新型学徒制，标准约5000–8500元/人，仅后台参考",
+    "show_when_rejected": false
+  },
+  {
+    "code": "FUND_HINT_1",
+    "name": "超长期特别国债项目补助资金",
+    "category": "资金补贴（提示）",
+    "regions": ["CN"],
+    "entity_types": ["enterprise"],
+    "conditions": [
+      {"field": "entity_type", "op": "eq", "value": "enterprise", "level": "hard", "text": "主体为企业"},
+      {"field": "fund_project", "op": "eq", "value": true, "level": "soft", "text": "有符合方向的投资或国债项目", "verify": "是否有符合超长期特别国债方向的项目"}
+    ],
+    "estimate": null,
+    "cap_tier": "verify",
+    "basis": "国家发展改革委相关通知，仅作提示，不编写申报书",
+    "show_when_rejected": false
+  },
+  {
+    "code": "FUND_HINT_2",
+    "name": "中央预算内投资专项资金",
+    "category": "资金补贴（提示）",
+    "regions": ["CN"],
+    "entity_types": ["enterprise"],
+    "conditions": [
+      {"field": "entity_type", "op": "eq", "value": "enterprise", "level": "hard", "text": "主体为企业"},
+      {"field": "fund_project", "op": "eq", "value": true, "level": "soft", "text": "有符合中央预算内投资方向的项目", "verify": "是否有符合专项方向的投资项目"}
+    ],
+    "estimate": null,
+    "cap_tier": "verify",
+    "basis": "中央预算内投资相关管理办法，仅作提示",
+    "show_when_rejected": false
+  },
+  {
+    "code": "FUND_HINT_3",
+    "name": "企业技术改造项目",
+    "category": "资金补贴（提示）",
+    "regions": ["CN"],
+    "entity_types": ["enterprise"],
+    "conditions": [
+      {"field": "entity_type", "op": "eq", "value": "enterprise", "level": "hard", "text": "主体为企业"},
+      {"field": "fund_project", "op": "eq", "value": true, "level": "soft", "text": "有技术改造项目", "verify": "是否有符合方向的技改项目"}
+    ],
+    "estimate": null,
+    "cap_tier": "verify",
+    "basis": "技术改造相关专项，仅作提示",
+    "show_when_rejected": false
+  },
+  {
+    "code": "FUND_HINT_4",
+    "name": "部委级资金项目",
+    "category": "资金补贴（提示）",
+    "regions": ["CN"],
+    "entity_types": ["enterprise"],
+    "conditions": [
+      {"field": "entity_type", "op": "eq", "value": "enterprise", "level": "hard", "text": "主体为企业"},
+      {"field": "fund_project", "op": "eq", "value": true, "level": "soft", "text": "有符合部委专项方向的项目", "verify": "是否有可申报的部委级项目"}
+    ],
+    "estimate": null,
+    "cap_tier": "verify",
+    "basis": "部委专项资金，仅作提示",
+    "show_when_rejected": false
+  },
+  {
+    "code": "FUND_HINT_5",
+    "name": "非部委资金项目",
+    "category": "资金补贴（提示）",
+    "regions": ["CN"],
+    "entity_types": ["enterprise"],
+    "conditions": [
+      {"field": "entity_type", "op": "eq", "value": "enterprise", "level": "hard", "text": "主体为企业"},
+      {"field": "fund_project", "op": "eq", "value": true, "level": "soft", "text": "有符合地方或社会资金方向的项目", "verify": "是否有可申报的非部委资金项目"}
+    ],
+    "estimate": null,
+    "cap_tier": "verify",
+    "basis": "非部委资金项目，仅作提示",
+    "show_when_rejected": false
+  },
+  {
+    "code": "STARTUP_GRANT",
+    "name": "一次性创业资助",
+    "category": "资金补贴（提示）",
+    "regions": ["4419"],
+    "entity_types": ["enterprise"],
+    "conditions": [
+      {"field": "established", "op": "years_since_lte", "value": 3, "level": "hard", "text": "成立不满3年", "verify": "确认成立日期"},
+      {"field": "startup_eligible", "op": "eq", "value": true, "level": "soft", "text": "符合东莞一次性创业资助的人员身份和首次创业条件", "verify": "核实经营者身份和是否首次创业"}
+    ],
+    "estimate": null,
+    "cap_tier": "verify",
+    "basis": "东莞市一次性创业资助，文号待顾问核对",
+    "show_when_rejected": false
+  },
+  {
+    "code": "SCALE_UP_AWARD",
+    "name": "小微企业升规奖励",
+    "category": "资金补贴（提示）",
+    "regions": ["4419"],
+    "entity_types": ["enterprise"],
+    "conditions": [
+      {"field": "revenue_12m", "op": "gte", "value": 20000000, "level": "hard", "text": "年主营业务收入达到规上标准（工业2000万元）", "verify": "确认近12个月营收是否达到规上标准"},
+      {"field": "scale_up_first", "op": "eq", "value": true, "level": "soft", "text": "首次升规", "verify": "是否为首次纳入规模以上"}
+    ],
+    "estimate": null,
+    "cap_tier": "verify",
+    "basis": "东莞市小微企业升规奖励，文号待顾问核对",
+    "show_when_rejected": false
+  },
+  {
+    "code": "SRDI_AWARD",
+    "name": "专精特新奖励（万江街道）",
+    "category": "资金补贴（提示）",
+    "regions": ["441900006000"],
+    "entity_types": ["enterprise"],
+    "conditions": [
+      {"field": "srdi_first", "op": "eq", "value": true, "level": "hard", "text": "独立法人且首次纳入省级专精特新", "verify": "是否首次纳入省级专精特新"}
+    ],
+    "estimate": null,
+    "cap_tier": "verify",
+    "basis": "东莞市万江街道专精特新奖励，文号待顾问核对",
+    "show_when_rejected": false
+  },
+  {
+    "code": "DATA_LABEL_AWARD",
+    "name": "数据标注产业奖励（万江街道）",
+    "category": "资金补贴（提示）",
+    "regions": ["441900006000"],
+    "entity_types": ["enterprise"],
+    "conditions": [
+      {"field": "industry", "op": "contains_any", "value": ["数据标注", "数据企业"], "level": "hard", "text": "行业为数据企业", "verify": "确认是否属于数据企业"},
+      {"field": "park", "op": "contains_any", "value": ["数据产业园"], "level": "hard", "text": "入驻数据产业园", "verify": "确认是否入驻数据产业园"}
+    ],
+    "estimate": null,
+    "cap_tier": "verify",
+    "basis": "万江街道数据标注产业奖励，文号待顾问核对",
+    "show_when_rejected": false
+  },
+  {
+    "code": "PRINT_INDUSTRY",
+    "name": "印刷业高质量发展专项",
+    "category": "资金补贴（提示）",
+    "regions": ["4419"],
+    "entity_types": ["enterprise"],
+    "conditions": [
+      {"field": "licenses", "op": "contains_any", "value": ["印刷"], "level": "hard", "text": "持有印刷经营许可证", "verify": "确认是否持有印刷经营许可证"}
+    ],
+    "estimate": null,
+    "cap_tier": "verify",
+    "basis": "东莞市印刷业高质量发展专项，文号待顾问核对",
+    "show_when_rejected": false
+  },
+  {
+    "code": "HIGH_TECH_SERIES",
+    "name": "国高、专精特新、单项冠军等认定",
+    "category": "资金补贴（提示）",
+    "regions": ["CN"],
+    "entity_types": ["enterprise"],
+    "conditions": [
+      {"field": "high_tech_ready", "op": "eq", "value": true, "level": "hard", "text": "满足认定条件（研发、知识产权、营收等）", "verify": "核实研发、知识产权和营收等认定条件"}
+    ],
+    "estimate": null,
+    "cap_tier": "verify",
+    "basis": "高新技术企业、专精特新、单项冠军等相关办法，仅作提示",
+    "show_when_rejected": false
+  }
+]

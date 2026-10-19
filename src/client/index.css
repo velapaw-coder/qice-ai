@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand: #3169f5;
+  --color-navy: #0c1832;
+  --color-ink: #182642;
+  --color-muted: #64738d;
+  --color-bg: #f5f8fe;
+  --color-line: #e4eaf4;
+  --font-sans: "PingFang SC", "Microsoft YaHei", Inter, sans-serif;
+}
+
+html { scroll-behavior: smooth; }
+body { margin: 0; color: var(--color-ink); background: white; font-family: var(--font-sans); }
+button, input, select, textarea { font: inherit; }
+:focus-visible { outline: 2px solid #3169f5; outline-offset: 2px; }
+
+@media print {
+  .no-print { display: none !important; }
+  .print-block { break-inside: avoid; }
+}
