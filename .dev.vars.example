@@ -1,0 +1,6 @@
+# 本地开发用。复制为 .dev.vars 后再启动 wrangler。
+# 这些值只用于本机，不能拿到生产环境。
+PEPPER=dev-only-qice-pepper-change-me
+SETTINGS_ENC_KEY=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+# 可选。配了且库里还没有模型时，Worker 会建一条 DeepSeek 配置。
+# DEEPSEEK_API_KEY=
