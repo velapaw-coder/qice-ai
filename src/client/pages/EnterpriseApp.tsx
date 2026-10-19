@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { DISCLAIMER } from "@shared/rules/evaluate";
 import { api, putFile } from "../lib/api";
 import { compressImage, extractionFromPdfText, maybeConvertHeic, parseSpreadsheet, readPdf } from "../lib/files";
@@ -39,7 +39,7 @@ export function EnterpriseApp() {
           <Link to="/app" className="flex shrink-0 items-center gap-2 text-lg font-extrabold tracking-tight"><BrandMark light />企策AI</Link>
           <nav className="hidden gap-1 text-sm whitespace-nowrap sm:flex">
             {nav.map(([path, label]) => (
-              <Link key={path} to={path} className={`rounded-full px-3 py-1.5 font-semibold ${location.pathname.startsWith(path) ? "bg-white text-[#1e4fc8]" : "text-[#d5e2f7]"}`}>{label}</Link>
+              <NavLink key={path} to={path} className="nav-pill nav-pill-top">{label}</NavLink>
             ))}
           </nav>
         </div>
@@ -47,7 +47,7 @@ export function EnterpriseApp() {
           <div className="space-y-2 border-t border-white/10 px-4 py-3 sm:hidden" data-testid="enterprise-drawer">
             <div className="flex justify-end"><button type="button" className="text-xl" data-testid="enterprise-menu-close" aria-label="关闭菜单" onClick={() => setMenu(false)}>×</button></div>
             {nav.map(([path, label]) => (
-              <Link key={path} to={path} className="block rounded-xl px-3 py-2 font-semibold text-[#d5e2f7]">{label}</Link>
+              <NavLink key={path} to={path} className="nav-pill nav-pill-drawer">{label}</NavLink>
             ))}
           </div>
         ) : null}
@@ -55,7 +55,7 @@ export function EnterpriseApp() {
           {["注册", "上传", "识别", "顾问复核", "方案"].map((label, index) => {
             const state = index < step ? "done" : index === step ? "current" : "todo";
             return (
-              <li key={label} className={`min-w-[4.5rem] flex-1 rounded-xl px-2 py-2 text-center ${state === "current" ? "bg-white text-[#1e4fc8]" : state === "done" ? "bg-white/15 text-white" : "bg-white/5 text-[#93a9cb]"}`}>
+              <li key={label} className={`min-w-[4.5rem] flex-1 rounded-xl px-2 py-2 text-center ${state === "current" ? "bg-white text-navy" : state === "done" ? "bg-white/15 text-white" : "bg-white/10 text-[#d5e2f7]"}`}>
                 <span className="block text-[11px] font-extrabold">{String(index + 1).padStart(2, "0")}</span>
                 <span className="block text-xs font-semibold">{label}</span>
               </li>
@@ -171,7 +171,7 @@ async function registerAndUpload(kind: "vat" | "social_security", file: File, on
 function UploadConsentLine({ marked = false }: { marked?: boolean }) {
   return (
     <p className="text-xs leading-5 text-muted" data-testid={marked ? "upload-consent" : undefined}>
-      上传即表示同意<Link className="text-brand" to="/legal/consent" target="_blank" rel="noreferrer" data-testid={marked ? "link-consent" : undefined}>《数据授权书》</Link><Link className="text-brand" to="/legal/privacy" target="_blank" rel="noreferrer" data-testid={marked ? "link-privacy" : undefined}>《隐私政策》</Link>（含资料存放于境外服务器）
+      上传即表示同意<Link className="text-[#1e4fc8]" to="/legal/consent" target="_blank" rel="noreferrer" data-testid={marked ? "link-consent" : undefined}>《数据授权书》</Link><Link className="text-[#1e4fc8]" to="/legal/privacy" target="_blank" rel="noreferrer" data-testid={marked ? "link-privacy" : undefined}>《隐私政策》</Link>（含资料存放于境外服务器）
     </p>
   );
 }

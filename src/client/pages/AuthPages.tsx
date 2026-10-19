@@ -14,7 +14,7 @@ function Shell({ title, children }: { title: string; children: React.ReactNode }
         </div>
       </header>
       <main className="mx-auto w-full max-w-lg px-4 py-8">
-        <p className="text-[13px] font-extrabold tracking-[0.18em] text-brand">企策AI</p>
+        <p className="text-[13px] font-extrabold tracking-[0.18em] text-[#1e4fc8]">企策AI</p>
         <h1 className="mb-4 text-2xl font-extrabold tracking-tight text-navy">{title}</h1>
         <Card>{children}</Card>
       </main>
@@ -80,7 +80,7 @@ export function RegisterPage() {
         {error ? <Banner tone="error">{error}</Banner> : null}
         <Button className="w-full" disabled={busy} data-testid="register-submit">{busy ? "正在创建账号…" : "注册并上传资料"}</Button>
       </form>
-      <p className="mt-4 text-sm text-muted">已有账号？<Link className="text-brand" to="/login">去登录</Link></p>
+      <p className="mt-4 text-sm text-muted">已有账号？<Link className="text-[#1e4fc8]" to="/login">去登录</Link></p>
     </Shell>
   );
 }
@@ -130,7 +130,7 @@ export function LoginPage() {
         {contact.phone ? `，电话 ${contact.phone}` : ""}
         {contact.wechat ? `，微信 ${contact.wechat}` : "。顾问联系方式可由管理员在后台配置。"}
       </p>
-      <p className="mt-2 text-sm"><Link className="text-brand" to="/register">注册企业账号</Link></p>
+      <p className="mt-2 text-sm"><Link className="text-[#1e4fc8]" to="/register">注册企业账号</Link></p>
     </Shell>
   );
 }

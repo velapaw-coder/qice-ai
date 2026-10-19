@@ -55,7 +55,7 @@ export function AdminApp() {
       <header className="z-30 flex h-14 shrink-0 items-center gap-3 bg-gradient-to-r from-[#0c1936] to-[#16356f] px-3 text-white" data-testid="admin-header">
         <button type="button" className="grid h-10 w-10 place-items-center rounded-xl bg-white/10 lg:hidden" data-testid="admin-menu" aria-label="打开菜单" onClick={() => setMenu(true)}>☰</button>
         <Link to="/admin" className="flex items-center gap-2 text-lg font-extrabold tracking-tight"><BrandMark light />企策AI</Link>
-        <span className="ml-auto hidden text-xs text-[#c3d0e7] sm:inline">顾问工作台</span>
+        <span className="ml-auto hidden text-xs font-semibold text-[#d5e2f7] sm:inline" data-testid="workspace-label">{me.user.role === "admin" ? "管理员工作台" : "顾问工作台"}</span>
       </header>
       <div className="flex min-h-0 flex-1">
         {menu ? <button type="button" className="fixed inset-0 z-40 bg-[#071126b8] lg:hidden" aria-label="关闭菜单" onClick={() => setMenu(false)} /> : null}
@@ -73,13 +73,8 @@ export function AdminApp() {
                 <p className="px-2 text-[11px] font-extrabold tracking-[0.16em] text-[#93a9cb]">{group.label}</p>
                 <div className="mt-1 space-y-1">
                   {group.items.map((item) => (
-                    <NavLink
-                      key={item.to}
-                      to={item.to}
-                      end={item.end}
-                      className={({ isActive }) => `flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold ${isActive ? "bg-white text-[#1e4fc8] shadow-[0_8px_18px_#0003]" : "text-[#d5e2f7] hover:bg-white/10"}`}
-                    >
-                      <span className="grid h-6 w-6 place-items-center rounded-lg bg-[#edf3ff] text-xs text-[#2d62eb]">{item.icon}</span>
+                    <NavLink key={item.to} to={item.to} end={item.end} className="nav-pill">
+                      <span className="nav-icon" aria-hidden="true">{item.icon}</span>
                       {item.label}
                     </NavLink>
                   ))}
@@ -90,7 +85,7 @@ export function AdminApp() {
           <div className="border-t border-white/10 p-3">
             <p className="truncate text-sm font-semibold">{me.user.name}</p>
             <p className="text-xs text-[#93a9cb]">{me.user.role === "admin" ? "管理员" : "顾问"}</p>
-            <button type="button" className="mt-2 text-sm font-semibold text-[#9ec0ff]" data-testid="admin-logout" onClick={logout}>退出登录</button>
+            <button type="button" className="mt-2 text-sm font-semibold text-[#d5e2f7] hover:text-white" data-testid="admin-logout" onClick={logout}>退出登录</button>
           </div>
         </aside>
         <main className="min-h-0 flex-1 overflow-y-auto">
@@ -303,7 +298,7 @@ function EnterpriseDetail() {
           <p>主体：{ent.entity_type || "待补"} · 地区：{ent.city || "待补"} {ent.region_code || ""} {ent.town || ""}</p>
         </div>
         {warnings.map((w) => <Banner key={w} tone={w.includes("重复") || w.includes("不一致") ? "error" : "warn"}>{w}{ent.dup_enterprise_id && w.includes("重复") ? <Link className="ml-2 underline" to={`/admin/enterprises/${ent.dup_enterprise_id}`}>查看另一家</Link> : null}</Banner>)}
-        {data.dup ? <p className="text-sm">疑似与 <Link className="text-brand" to={`/admin/enterprises/${data.dup.id}`}>{data.dup.name}</Link> 重复</p> : null}
+        {data.dup ? <p className="text-sm">疑似与 <Link className="text-[#1e4fc8]" to={`/admin/enterprises/${data.dup.id}`}>{data.dup.name}</Link> 重复</p> : null}
       </Card>
       {msg ? <Banner>{msg}</Banner> : null}
       <div className="grid gap-4 xl:grid-cols-3">
@@ -313,7 +308,7 @@ function EnterpriseDetail() {
             {(data.files || []).filter((f: { parent_file_id?: string }) => !f.parent_file_id).map((f: { id: string; filename: string; kind: string; period_start?: string; size: number }) => (
               <li key={f.id} className="flex items-center justify-between gap-2">
                 <span className="truncate">{f.kind === "vat" ? "增值税" : "社保"} {f.period_start || ""} {f.filename}</span>
-                <a className="shrink-0 text-brand" href={`/api/admin/files/${f.id}/download`} data-testid={`download-${f.kind}`}>下载</a>
+                <a className="shrink-0 text-[#1e4fc8]" href={`/api/admin/files/${f.id}/download`} data-testid={`download-${f.kind}`}>下载</a>
               </li>
             ))}
             {(data.files || []).length === 0 ? <li className="text-muted">还没有文件</li> : null}
