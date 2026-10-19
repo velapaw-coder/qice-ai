@@ -97,11 +97,12 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
     }
     const next = adminPage.getByTestId("policy-next");
     if (await next.isDisabled()) break;
+    const firstRow = await adminPage.locator("tbody tr").first().innerText();
     await Promise.all([
       adminPage.waitForResponse((res) => res.url().includes("/api/admin/policies?") && res.url().includes(`page=${guard + 2}`)),
       next.click(),
     ]);
-    await expect(adminPage.locator("[data-testid^='enable-']").first()).toBeVisible();
+    await expect(adminPage.locator("tbody tr").first()).not.toHaveText(firstRow);
   }
   expect(enabled.length).toBeGreaterThan(7);
   await adminPage.goto("/admin/ai-settings");
