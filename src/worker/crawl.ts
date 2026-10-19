@@ -1,5 +1,5 @@
 import { applyModelSuggestion, POLICY_EXTRACTION_PROMPT } from "../shared/rules/suggest";
-import { crawlRunIsStale, extractMainText, extractPolicyLinks, junkTitleReason, pageLooksLikePolicy } from "../shared/policyPage";
+import { crawlRunIsStale, extractMainText, extractPolicyLinks, junkTitleReason, pageLooksLikePolicy, policyLinkCountLabel } from "../shared/policyPage";
 import { uid, nowIso, type Env } from "./util";
 import { setting } from "./util";
 import { decryptSecret } from "./crypto";
@@ -46,9 +46,9 @@ async function settle(db: D1Database, runId: string, fields: Record<string, numb
     .run();
   if (!note) return;
   const row = await db.prepare("SELECT errors_json FROM crawl_runs WHERE id = ?").bind(runId).first<{ errors_json: string }>();
-  let meta: { source_id?: string; source_name?: string; notes?: string[] } = {};
+  let meta: { source_id?: string; source_name?: string; source_count?: number; sources?: string[]; notes?: string[] } = {};
   try {
-    const parsed = JSON.parse(row?.errors_json || "{}") as { source_id?: string; source_name?: string; notes?: string[] } | unknown[];
+    const parsed = JSON.parse(row?.errors_json || "{}") as { source_id?: string; source_name?: string; source_count?: number; sources?: string[]; notes?: string[] } | unknown[];
     if (parsed && !Array.isArray(parsed)) meta = parsed;
   } catch {
     meta = {};
@@ -74,9 +74,9 @@ export async function closeStaleCrawlRuns(db: D1Database, nowMs = Date.now()): P
     .all<{ id: string; started_at: string; errors_json: string }>();
   for (const run of stuck.results || []) {
     if (!crawlRunIsStale(run.started_at, nowMs)) continue;
-    let meta: { source_id?: string; source_name?: string; notes?: string[] } = {};
+    let meta: { source_id?: string; source_name?: string; source_count?: number; sources?: string[]; notes?: string[] } = {};
     try {
-      const parsed = JSON.parse(run.errors_json || "{}") as { notes?: string[] } | unknown[];
+      const parsed = JSON.parse(run.errors_json || "{}") as { source_id?: string; source_name?: string; source_count?: number; sources?: string[]; notes?: string[] } | unknown[];
       if (parsed && !Array.isArray(parsed)) meta = parsed;
     } catch {
       meta = {};
@@ -321,7 +321,7 @@ async function handleMessage(body: CrawlMessage, env: Env): Promise<void> {
       }
       const links = extractPolicyLinks(page.text, url, source.link_pattern || "");
       await env.DB.prepare("UPDATE policy_sources SET last_status = ?, consecutive_failures = 0, last_crawled_at = ? WHERE id = ?")
-        .bind(`文章 ${links.length}`, nowIso(), source.id)
+        .bind(policyLinkCountLabel(links.length), nowIso(), source.id)
         .run();
       if (links.length) {
         await env.DB.prepare("UPDATE crawl_runs SET pending = pending + ?, items_found = items_found + ? WHERE id = ?").bind(links.length, links.length, body.runId).run();
@@ -376,11 +376,12 @@ export async function enqueueCrawl(env: Env, type: string, actorId: string | nul
     ? await env.DB.prepare("SELECT id, name FROM policy_sources WHERE id = ?").bind(sourceId).all<{ id: string; name: string }>()
     : await env.DB.prepare("SELECT id, name FROM policy_sources WHERE enabled = 1").all<{ id: string; name: string }>();
   const rows = sources.results || [];
-  const sourceName = sourceId ? rows[0]?.name || "指定来源" : "全部已启用来源";
+  const names = rows.map((row) => row.name);
+  const sourceName = sourceId ? rows[0]?.name || "指定来源" : `全部来源(${rows.length})`;
   await env.DB.prepare(
     "INSERT INTO crawl_runs (id, type, triggered_by, started_at, status, pending, errors_json) VALUES (?, ?, ?, ?, '进行中', ?, ?)",
   )
-    .bind(runId, type, actorId, nowIso(), rows.length, JSON.stringify({ source_id: sourceId || "", source_name: sourceName, notes: [] }))
+    .bind(runId, type, actorId, nowIso(), rows.length, JSON.stringify({ source_id: sourceId || "", source_name: sourceName, source_count: rows.length, sources: names, notes: [] }))
     .run();
   for (const row of rows) {
     await env.CRAWL_QUEUE.send({ kind: "list", runId, sourceId: row.id, page: 1 } satisfies CrawlMessage);

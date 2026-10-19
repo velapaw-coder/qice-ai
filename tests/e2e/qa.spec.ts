@@ -364,6 +364,8 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
     await adminPage.goto("/admin/settings");
     await adminPage.getByTestId("consultant-phone").fill("13800138000");
     await adminPage.getByLabel("档位名称").first().fill("1–3万元");
+    const webhook = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=qa-demo";
+    await adminPage.getByTestId("webhook-url").fill(webhook);
     await adminPage.getByTestId("save-settings").click();
     await expect(adminPage.getByTestId("settings-saved")).toHaveText("已保存");
     await adminPage.reload();
@@ -372,6 +374,10 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
     await adminPage.getByLabel("档位名称").first().fill("1–3万");
     await adminPage.getByTestId("save-settings").click();
     await expect(adminPage.getByTestId("settings-saved")).toHaveText("已保存");
+    await adminPage.reload();
+    await adminPage.getByTestId("webhook-toggle").click();
+    await expect(adminPage.getByTestId("webhook-url")).toHaveValue(webhook);
+    await expect(adminPage.getByTestId("webhook-revealed")).toHaveText(webhook);
 
     await adminPage.goto("/admin/users");
     await adminPage.getByTestId("reset-13900000002").click();

@@ -1,4 +1,4 @@
-/** 列表页链接和正文清洗。抓取、草稿筛选和驳回脚本共用同一套判断。 */
+/** 列表页链接和正文清洗。抓取、草稿筛选和批量驳回共用同一套判断。 */
 
 export const NAV_TITLES = [
   "搜一下",
@@ -32,6 +32,7 @@ export const SITE_TITLES = [
   "深圳市人民政府",
   "广东省财政厅",
   "中华人民共和国人力资源和社会保障部",
+  "国家税务总局政策法规库",
 ];
 
 const POLICY_HINT = /关于|通知|公告|意见|办法|规定|方案|细则|条例|决定|函|补贴|资助|奖励|申报|政策|措施|指引|目录|清单|解读|规划|实施|暂行|图解/;
@@ -66,7 +67,80 @@ export function junkTitleReason(title: string): string | null {
   if (/^[A-Za-z0-9_./\\=:;'"+\-\s]+$/.test(text)) return "标题没有中文";
   const han = (text.match(/[\u4e00-\u9fff]/g) || []).length;
   if (han < 6) return "中文太少";
+  if (columnSiteTitle(text)) return "标题是栏目导航";
   return null;
+}
+
+export function policyLinkCountLabel(count: number): string {
+  return `政策链接 ${Math.max(0, count)}`;
+}
+
+export function formatShanghai(value: string | null | undefined): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "—";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const ms = Date.parse(raw);
+  if (!Number.isFinite(ms)) return raw.replace("T", " ").replace(/\.\d+Z?$/, "").slice(0, 19);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(ms));
+  const pick = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value || "";
+  const hour = pick("hour") === "24" ? "00" : pick("hour").padStart(2, "0");
+  return `${pick("year")}-${pick("month")}-${pick("day")} ${hour}:${pick("minute")}:${pick("second")}`;
+}
+
+export function crawlSourceLabel(input: { type?: string; errors_json?: string; source_name?: string; source_count?: number; sources?: string[] }): string {
+  let sourceName = input.source_name || "";
+  let count = input.source_count;
+  let sources = input.sources || [];
+  if (input.errors_json) {
+    try {
+      const parsed = JSON.parse(input.errors_json) as { source_name?: string; source_count?: number; sources?: unknown } | unknown[];
+      if (parsed && !Array.isArray(parsed)) {
+        sourceName = sourceName || parsed.source_name || "";
+        if (count == null && typeof parsed.source_count === "number") count = parsed.source_count;
+        if (!sources.length && Array.isArray(parsed.sources)) sources = parsed.sources.filter((name): name is string => typeof name === "string");
+      }
+    } catch {
+      sourceName = sourceName || "";
+    }
+  }
+  const type = input.type || "";
+  const batch = type === "initial" || type === "monthly" || sourceName.includes("全部");
+  const names = sources.map((name) => name.trim()).filter(Boolean);
+  const known = typeof count === "number" && Number.isFinite(count) ? count : names.length ? names.length : undefined;
+  if (batch) {
+    if (known == null) return "全部来源";
+    const head = names.slice(0, 4);
+    if (!head.length) return `全部来源(${known})`;
+    return `全部来源(${known})：${head.join("、")}${names.length > head.length ? "等" : ""}`;
+  }
+  if (sourceName && sourceName !== "—") return sourceName;
+  if (names.length === 1) return names[0]!;
+  return "—";
+}
+
+export function cleanStoredDraftText(raw: string): string {
+  const input = String(raw || "");
+  if (!input.trim()) return "";
+  if (/<[a-z][^>]{0,80}>/i.test(input)) {
+    const extracted = extractMainText(input).text.trim();
+    if (hanCount(extracted) >= 40) return extracted;
+  }
+  const titles = [...NAV_TITLES, ...SITE_TITLES].sort((a, b) => b.length - a.length);
+  const lines = input.split(/\n+/).map((line) => {
+    let text = stripInlineNoise(line);
+    for (const title of titles) text = text.split(title).join(" ");
+    return text.replace(/[ \t\f\v]+/g, " ").trim();
+  }).filter((line) => line && !storedChromeLine(line));
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n").slice(0, 60_000);
 }
 
 export function policyTitleHint(title: string): boolean {
@@ -193,6 +267,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "policy_draft.adopt": "采纳政策草稿",
   "policy_draft.reject": "驳回政策草稿",
   "policy_draft.bulk_reject": "批量驳回草稿",
+  "policy_draft.reclean": "清洗草稿原文",
   "deal.policy_create": "创建政策成交",
   "deal.policy_update": "更新政策成交",
   "deal.realization": "记录兑现",
@@ -256,6 +331,36 @@ function pickMain(html: string): string {
     if (match && hanCount(match[1] || "") >= 40) return match[1]!;
   }
   return html;
+}
+
+function columnSiteTitle(text: string): boolean {
+  const parts = text.split(/\s*[-–—|｜]\s*/).map((part) => part.trim()).filter(Boolean);
+  if (parts.length < 2) return false;
+  const left = parts[0]!;
+  const right = parts[parts.length - 1]!;
+  if (!left || left.length > 10) return false;
+  if (NAV_TITLES.includes(left) || NAV_TITLES.includes(right)) return true;
+  if (SITE_TITLES.includes(left) || SITE_TITLES.includes(right)) return true;
+  return /(局|厅|部|政府|委员会|政策法规库)$/.test(right);
+}
+
+function stripInlineNoise(line: string): string {
+  return line
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/var\s+\w+\s*=\s*[^;\n]{0,300};?/gi, " ")
+    .replace(/function\s+\w*\s*\([^)]*\)\s*\{[^}]*\}/gi, " ")
+    .replace(/\b(window|document)\.[A-Za-z0-9_$.]+(\([^)]*\))?/g, " ");
+}
+
+function storedChromeLine(line: string): boolean {
+  const text = normalizeSpace(line);
+  if (!text) return true;
+  if (NAV_TITLES.includes(text) || SITE_TITLES.includes(text)) return true;
+  if (junkTitleReason(text) === "标题是栏目导航") return true;
+  if (/var\s+\w+\s*=|function\s*\(|function\s+\w+\s*\(|window\.|document\.|ctx\s*=|<\/?[a-z][^>]*>/i.test(text) && hanCount(text) < 8) return true;
+  if (/^(版权所有|ICP备|网站标识码|主办单位|联系电话)/.test(text)) return true;
+  return false;
 }
 
 function chromeLine(line: string): boolean {
