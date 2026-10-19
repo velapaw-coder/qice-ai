@@ -37,14 +37,18 @@ body = body.replace(
 );
 body = body.replace(
   '<nav class="links"><a href="#services">服务内容</a><a href="#value">企业价值</a><a href="#process">服务流程</a><a href="#faq">常见问题</a></nav><a class="btn" data-cta href="/register">免费初步评估 →</a>',
-  '<nav class="links"><a href="#services">服务内容</a><a href="#value">企业价值</a><a href="#process">服务流程</a><a href="#faq">常见问题</a><a href="/login">登录</a></nav><a class="nav-login" href="/login">登录</a><a class="btn" data-cta href="/register">免费初步评估 →</a>',
+  '<nav class="links"><a href="#services">服务内容</a><a href="#value">企业价值</a><a href="#process">服务流程</a><a href="#faq">常见问题</a><a href="/login">登录</a></nav><a class="nav-login" href="/login">登录</a><button type="button" class="menu-btn" data-testid="home-menu" aria-label="打开菜单">☰</button><a class="btn" data-cta href="/register">免费初步评估 →</a>',
+);
+body = body.replace(
+  "</header>",
+  '</header><div class="home-drawer" data-testid="home-drawer"><button type="button" class="home-drawer-close" data-testid="home-menu-close" aria-label="关闭菜单">×</button><a href="#services">服务内容</a><a href="#value">企业价值</a><a href="#process">服务流程</a><a href="#faq">常见问题</a><a href="/login">登录</a><a data-cta href="/register">免费初步评估</a></div>',
 );
 body = body.replace(
   "<p>本页面为MVP展示版本；具体政策、服务主体、收费方式以正式协议及现行规定为准。</p>",
   '<p><a href="/legal/privacy">隐私政策</a> · <a href="/legal/consent">数据授权书</a> · <a href="/legal/terms">用户协议</a></p><p>深圳市精灵探索科技有限公司 · 联系方式见登录页</p>',
 );
 body = body.replaceAll("<header", '<header').replace('href="#home"', 'href="/"');
-const extra = `.nav-login{color:#465675;font-weight:700;font-size:14px}.footer a{color:#9eb6e6}.step-line{display:flex;gap:12px;align-items:flex-start;padding:14px 0;border-bottom:1px solid var(--line)}.step-line:last-child{border-bottom:0}.step-line .n{width:28px;height:28px;border-radius:50%;background:#edf3ff;color:#2259d7;display:grid;place-items:center;font-weight:800;flex:none}.step-line b{display:block}.step-line span{color:#64738d;font-size:13px}@media(max-width:850px){.nav-login{display:none}}`;
+const extra = `.nav-login{color:#465675;font-weight:700;font-size:14px}.footer a{color:#9eb6e6}.step-line{display:flex;gap:12px;align-items:flex-start;padding:14px 0;border-bottom:1px solid var(--line)}.step-line:last-child{border-bottom:0}.step-line .n{width:28px;height:28px;border-radius:50%;background:#edf3ff;color:#2259d7;display:grid;place-items:center;font-weight:800;flex:none}.step-line b{display:block}.step-line span{color:#64738d;font-size:13px}.menu-btn{display:none;width:40px;height:40px;border:0;border-radius:12px;background:#edf3ff;color:#1e4fc8;font-size:20px;cursor:pointer}.home-drawer{display:none;position:fixed;z-index:40;inset:0 auto 0 0;width:min(320px,86vw);background:#0c1832;color:#fff;flex-direction:column;gap:18px;padding:22px}.home-drawer.open{display:flex}.home-drawer a{color:#fff;font-weight:700;font-size:16px}.home-drawer-close{align-self:flex-end;background:transparent;border:0;color:#fff;font-size:28px;line-height:1;cursor:pointer}@media(max-width:850px){.nav-login{display:none}.menu-btn{display:grid;place-items:center}}`;
 if (body.includes("30%") || body.includes("政策服务费") || body.includes("openForm") || body.includes("企益") || body.includes("QIYI")) {
   throw new Error("homepage still has forbidden copy");
 }

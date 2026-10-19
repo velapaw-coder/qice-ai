@@ -2,5 +2,7 @@
 # 这些值只用于本机，不能拿到生产环境。
 PEPPER=dev-only-qice-pepper-change-me
 SETTINGS_ENC_KEY=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+# 仅本机。生产不要设置，Worker 默认每 IP 每小时注册 5 次。突发仍由 REGISTER_LIMITER 限制为每 60 秒 5 次。
+REGISTER_HOURLY_LIMIT=30
 # 可选。配了且库里还没有模型时，Worker 会建一条 DeepSeek 配置。
 # DEEPSEEK_API_KEY=

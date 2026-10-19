@@ -15,10 +15,12 @@ interface Me {
 export function EnterpriseApp() {
   const [me, setMe] = useState<Me | null>(null);
   const [error, setError] = useState("");
+  const [menu, setMenu] = useState(false);
   const location = useLocation();
   useEffect(() => {
     api<Me>("/api/me").then(setMe).catch((err) => setError(err.message));
   }, [location.pathname]);
+  useEffect(() => { setMenu(false); }, [location.pathname]);
   if (error) return <div className="p-6"><Banner tone="error">{error}</Banner><Link to="/login">去登录</Link></div>;
   if (!me) return <p className="p-6 text-sm text-muted">正在读取账号…</p>;
   if (me.user.role !== "enterprise") return <Navigate to="/admin" replace />;
@@ -33,13 +35,22 @@ export function EnterpriseApp() {
     <div className="flex h-dvh min-h-0 flex-col bg-bg">
       <header className="no-print z-30 shrink-0 bg-gradient-to-r from-[#0c1936] to-[#16356f] text-white">
         <div className="mx-auto flex min-h-16 max-w-3xl items-center justify-between gap-3 px-4">
+          <button type="button" className="grid h-10 w-10 place-items-center rounded-xl bg-white/10 sm:hidden" data-testid="enterprise-menu" aria-label="打开菜单" onClick={() => setMenu(true)}>☰</button>
           <Link to="/app" className="flex shrink-0 items-center gap-2 text-lg font-extrabold tracking-tight"><BrandMark light />企策AI</Link>
-          <nav className="flex gap-1 overflow-x-auto text-sm whitespace-nowrap">
+          <nav className="hidden gap-1 text-sm whitespace-nowrap sm:flex">
             {nav.map(([path, label]) => (
               <Link key={path} to={path} className={`rounded-full px-3 py-1.5 font-semibold ${location.pathname.startsWith(path) ? "bg-white text-[#1e4fc8]" : "text-[#d5e2f7]"}`}>{label}</Link>
             ))}
           </nav>
         </div>
+        {menu ? (
+          <div className="space-y-2 border-t border-white/10 px-4 py-3 sm:hidden" data-testid="enterprise-drawer">
+            <div className="flex justify-end"><button type="button" className="text-xl" data-testid="enterprise-menu-close" aria-label="关闭菜单" onClick={() => setMenu(false)}>×</button></div>
+            {nav.map(([path, label]) => (
+              <Link key={path} to={path} className="block rounded-xl px-3 py-2 font-semibold text-[#d5e2f7]">{label}</Link>
+            ))}
+          </div>
+        ) : null}
         <ol className="mx-auto flex max-w-3xl gap-2 overflow-x-auto px-4 pb-4" data-testid="progress-steps">
           {["注册", "上传", "识别", "顾问复核", "方案"].map((label, index) => {
             const state = index < step ? "done" : index === step ? "current" : "todo";
@@ -348,7 +359,7 @@ function SettingsPage() {
       <PageHeader kicker="账号" title="设置" description="修改密码、撤回授权，或申请删除已上传的资料。" />
       <Card>
         <div className="mt-4 flex flex-col gap-2">
-          <Button asChild variant="outline"><Link to="/app/change-password">修改密码</Link></Button>
+          <Button asChild variant="outline" data-testid="change-password-link"><Link to="/app/change-password">修改密码</Link></Button>
           <Button variant="danger" onClick={revoke} data-testid="revoke">撤回授权</Button>
           <Button variant="danger" onClick={remove}>申请删除资料</Button>
           <Button variant="ghost" onClick={logout} data-testid="logout">退出登录</Button>

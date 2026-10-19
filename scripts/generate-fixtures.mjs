@@ -43,13 +43,17 @@ const quarters = [
   ["2026-07-01", "2026-09-30"],
 ];
 
-function vatRows(name, uscc, extra) {
+function vatRows(name, uscc, extra, opts = {}) {
+  const taxpayer = opts.taxpayer || "一般纳税人";
+  const title = taxpayer === "小规模纳税人"
+    ? "增值税及附加税费申报表（小规模纳税人适用）"
+    : "增值税及附加税费申报表（一般纳税人适用）";
   return [
-    ["增值税及附加税费申报表（一般纳税人适用）"],
+    [title],
     ["合成测试数据，非真实申报"],
     ["纳税人名称", name],
     ["纳税人识别号", uscc],
-    ["增值税纳税人类型", "一般纳税人"],
+    ["增值税纳税人类型", taxpayer],
     extra,
     [],
     ["所属期起", "所属期止", "销售额", "应纳税额", "附加税费"],
@@ -64,7 +68,10 @@ function writeBook(filename, rows, sheetName) {
   XLSX.writeFile(wb, join(outDir, filename));
 }
 
-function ssRows(name, uscc, people, title = "深圳市社会保险费缴费明细（合成测试数据）") {
+function ssRows(name, uscc, people, title) {
+  title = title || (name.includes("东莞")
+    ? "东莞市社会保险费缴费明细（合成测试数据）"
+    : "深圳市社会保险费缴费明细（合成测试数据）");
   const rows = [
     [title],
     ["合成测试数据，非真实人员"],
@@ -114,6 +121,50 @@ writeBook(
   "社保",
 );
 
+function people(count, area) {
+  const rows = [];
+  for (let i = 1; i <= count; i++) {
+    rows.push({
+      name: `合成员工${String(i).padStart(2, "0")}`,
+      id: makeChineseId(area, "19880520", String(i).padStart(3, "0")),
+      start: "2019-03-01",
+    });
+  }
+  return rows;
+}
+
+const SMALL_NAME = "深圳合成小规模商贸有限公司";
+const SMALL_USCC = makeUscc("91440300MA5QCXM01");
+const DG_NAME = "东莞合成智造有限公司";
+const DG_USCC = makeUscc("91441900MA5QCDG01");
+const FIX_NAME = "深圳合成补传科技有限公司";
+const FIX_USCC = makeUscc("91440300MA5QCBU01");
+
+writeBook(
+  "小规模-增值税申报表-合成.xlsx",
+  vatRows(SMALL_NAME, SMALL_USCC, ["登记机关", "深圳市市场监督管理局"], { taxpayer: "小规模纳税人" }),
+  "增值税",
+);
+writeBook("小规模-社保清单-合成.xlsx", ssRows(SMALL_NAME, SMALL_USCC, people(15, "440300")), "社保");
+writeBook(
+  "东莞制造-增值税申报表-合成.xlsx",
+  vatRows(DG_NAME, DG_USCC, ["登记机关", "东莞市市场监督管理局"]),
+  "增值税",
+);
+writeBook("东莞制造-社保清单-合成.xlsx", ssRows(DG_NAME, DG_USCC, people(80, "441900")), "社保");
+writeBook(
+  "补传企业-增值税申报表-合成.xlsx",
+  vatRows(FIX_NAME, FIX_USCC, ["登记机关", "深圳市市场监督管理局"]),
+  "增值税",
+);
+writeBook("补传企业-社保清单-合成.xlsx", ssRows(FIX_NAME, FIX_USCC, people(8, "440300")), "社保");
+writeBook("错误资料-合成.xlsx", [
+  ["合成测试数据，仅用于验收"],
+  ["这份表格故意写错，不能直接使用"],
+  ["栏目", "说明"],
+  ["备注", "故意缺少关键字段，用于验收退回后重新上传"],
+], "错误");
+
 const pdf = await PDFDocument.create();
 pdf.registerFontkit(fontkit);
 const fontBytes = readFileSync("/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf");
@@ -141,13 +192,28 @@ writeFileSync(
 这些文件只用于开发和验收，**不是真实企业、真实人员和真实申报**。
 
 - 企业名「${AIHUA_NAME}」来自产品验收案例的虚构主体。
-- 统一社会信用代码按 GB 32100 校验位算法生成：爱华 \`${AIHUA_USCC}\`，个体户 \`${SOLE_USCC}\`。
+- 统一社会信用代码按 GB 32100 校验位算法生成：爱华 \`${AIHUA_USCC}\`，个体户 \`${SOLE_USCC}\`，小规模 \`${SMALL_USCC}\`，东莞制造 \`${DG_USCC}\`，补传企业 \`${FIX_USCC}\`。
 - 证件号码按校验位算法生成，姓名为「合成员工」「合成经营者」。
 - 金额是为了让规则试算得到确定区间而设定的，不代表任何真实纳税情况。
 
 爱华社保：43 人，其中 4 名青年（2004-01-15 出生，2025-06-01 参保），每人养老 640 + 医疗 140 + 失业 20 = 800 元。
 对应高校毕业生社保补贴上沿约为 4 × 800 × 25% × 12 = 9600 元，取整后 10000 元。
+
+另外几份同样是合成数据：
+
+- 深圳合成小规模商贸有限公司：小规模纳税人，约 15 人。
+- 东莞合成智造有限公司：一般纳税人，约 80 人。
+- 深圳合成补传科技有限公司：一般纳税人，8 人，用来在退回后重新上传。
+- 错误资料-合成.xlsx：故意无法识别，用来走「需补传」。
 `,
 );
 
-console.log(JSON.stringify({ aihuaUscc: AIHUA_USCC, soleUscc: SOLE_USCC, people: aihuaPeople.length, dir: outDir }, null, 2));
+console.log(JSON.stringify({
+  aihuaUscc: AIHUA_USCC,
+  soleUscc: SOLE_USCC,
+  smallUscc: SMALL_USCC,
+  dongguanUscc: DG_USCC,
+  fixUscc: FIX_USCC,
+  people: aihuaPeople.length,
+  dir: outDir,
+}, null, 2));

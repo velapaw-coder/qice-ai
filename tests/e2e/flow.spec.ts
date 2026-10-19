@@ -192,7 +192,7 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
   await consultantPage.getByTestId("realize-amount").fill("5000");
   await consultantPage.getByTestId("realize-date").fill("2026-10-01");
   await consultantPage.getByTestId("realize").click();
-  await expect(consultantPage.getByText("已兑现")).toBeVisible();
+  await expect(consultantPage.getByTestId("deal-stage-label")).toContainText("已兑现");
 
   const download = await Promise.all([
     consultantPage.waitForEvent("download"),
