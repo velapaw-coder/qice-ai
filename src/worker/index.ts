@@ -6,9 +6,37 @@ import { enterpriseRoutes } from "./routes/enterprise";
 import { llmRoutes } from "./routes/llm";
 import { publicRoutes } from "./routes/public";
 import { ticketRoutes } from "./routes/tickets";
+import { decorateHtml, documentHeaders, pageKind, robotsTxt, sitemapXml, ROBOTS_CONTENT_TYPE, SITEMAP_CONTENT_TYPE } from "./seo";
 import { loadSession, type Env, type Role, type Vars } from "./util";
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
+
+app.use("*", async (c, next) => {
+  const path = c.req.path;
+  if (path === "/api" || path.startsWith("/api/")) return next();
+  if (c.req.method !== "GET" && c.req.method !== "HEAD") return next();
+  const normalized = path.replace(/\/+$/, "") || "/";
+  if (normalized === "/robots.txt") {
+    const headers = { "content-type": ROBOTS_CONTENT_TYPE, "cache-control": "public, max-age=3600" };
+    if (c.req.method === "HEAD") return c.body(null, 200, headers);
+    return c.body(robotsTxt(), 200, headers);
+  }
+  if (normalized === "/sitemap.xml") {
+    const headers = { "content-type": SITEMAP_CONTENT_TYPE, "cache-control": "public, max-age=3600" };
+    if (c.req.method === "HEAD") return c.body(null, 200, headers);
+    return c.body(sitemapXml(), 200, headers);
+  }
+  if (!pageKind(normalized)) return next();
+  const assetUrl = new URL(c.req.url);
+  assetUrl.pathname = "/index.html";
+  assetUrl.search = "";
+  const asset = await c.env.ASSETS.fetch(new Request(assetUrl.toString(), { method: "GET" }));
+  if (!asset.ok) return next();
+  const html = decorateHtml(await asset.text(), normalized);
+  const headers = documentHeaders(normalized);
+  if (c.req.method === "HEAD") return c.body(null, 200, headers);
+  return c.body(html, 200, headers);
+});
 
 app.use("/api/*", async (c, next) => {
   if (c.req.method !== "GET" && c.req.method !== "HEAD") {
