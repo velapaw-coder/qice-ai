@@ -6,6 +6,7 @@ import { compressImage, extractionFromPdfText, maybeConvertHeic, parseSpreadshee
 import { recognizePages } from "../lib/vision";
 import { Banner, BrandMark, Button, Card, Input, Label, PageHeader, Textarea, TierBadge } from "../components/ui";
 import { ChangePasswordPage, SelfPasswordForm } from "./AuthPages";
+import { ConsultantCard, EnterpriseTicketList, TicketThread } from "./serviceDesk";
 
 interface Me {
   user: { role: string; must_change_password: boolean; phone: string; name: string };
@@ -16,7 +17,11 @@ export function EnterpriseApp() {
   const [me, setMe] = useState<Me | null>(null);
   const [error, setError] = useState("");
   const [menu, setMenu] = useState(false);
+  const [unread, setUnread] = useState(0);
   const location = useLocation();
+  useEffect(() => {
+    api<{ count: number }>("/api/tickets/unread").then((res) => setUnread(res.count || 0)).catch(() => setUnread(0));
+  }, [location.pathname]);
   useEffect(() => {
     api<Me>("/api/me").then(setMe).catch((err) => setError(err.message));
   }, [location.pathname]);
@@ -27,9 +32,10 @@ export function EnterpriseApp() {
   if (me.user.must_change_password && location.pathname !== "/app/change-password") return <Navigate to="/app/change-password" replace />;
   const step = progressIndex(me.enterprise?.status || "待上传");
   const nav = [
-    ["/app/upload", "资料"],
-    ["/app/report", "方案"],
-    ["/app/settings", "设置"],
+    { to: "/app/upload", label: "资料" },
+    { to: "/app/report", label: "方案" },
+    { to: "/app/tickets", label: "工单" },
+    { to: "/app/settings", label: "设置" },
   ];
   return (
     <div className="flex h-dvh min-h-0 flex-col bg-bg">
@@ -38,16 +44,23 @@ export function EnterpriseApp() {
           <button type="button" className="grid h-10 w-10 place-items-center rounded-xl bg-white/10 sm:hidden" data-testid="enterprise-menu" aria-label="打开菜单" onClick={() => setMenu(true)}>☰</button>
           <Link to="/app" className="flex shrink-0 items-center gap-2 text-lg font-extrabold tracking-tight"><BrandMark light />企策AI</Link>
           <nav className="hidden gap-1 text-sm whitespace-nowrap sm:flex">
-            {nav.map(([path, label]) => (
-              <NavLink key={path} to={path} className="nav-pill nav-pill-top">{label}</NavLink>
+            {nav.map((item) => (
+              <NavLink key={item.to} to={item.to} className="nav-pill nav-pill-top">
+                {item.label}
+                {item.to === "/app/tickets" && unread > 0 ? <span aria-hidden="true" data-testid="ticket-dot" className="ml-1 inline-block h-2 w-2 shrink-0 rounded-full bg-[#e11d48]" /> : null}
+              </NavLink>
             ))}
           </nav>
         </div>
         {menu ? (
           <div className="space-y-2 border-t border-white/10 px-4 py-3 sm:hidden" data-testid="enterprise-drawer">
             <div className="flex justify-end"><button type="button" className="text-xl" data-testid="enterprise-menu-close" aria-label="关闭菜单" onClick={() => setMenu(false)}>×</button></div>
-            {nav.map(([path, label]) => (
-              <NavLink key={path} to={path} className="nav-pill nav-pill-drawer">{label}</NavLink>
+            <ConsultantCard testId="my-consultant-drawer" />
+            {nav.map((item) => (
+              <NavLink key={item.to} to={item.to} className="nav-pill nav-pill-drawer">
+                {item.label}
+                {item.to === "/app/tickets" && unread > 0 ? <span aria-hidden="true" className="ml-1 inline-block h-2 w-2 shrink-0 rounded-full bg-[#e11d48]" /> : null}
+              </NavLink>
             ))}
           </div>
         ) : null}
@@ -63,17 +76,24 @@ export function EnterpriseApp() {
           })}
         </ol>
       </header>
+      <div className="flex min-h-0 flex-1">
+      <aside className="hidden w-72 shrink-0 overflow-y-auto border-r border-[#d8e1ef] bg-[#f4f7fb] lg:block" data-testid="enterprise-consultant-side">
+        <div className="p-4"><ConsultantCard testId="my-consultant-side" /></div>
+      </aside>
       <main className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-3xl px-4 py-5">
         <Routes>
           <Route index element={<StatusHome me={me} />} />
           <Route path="upload" element={<UploadPage me={me} />} />
           <Route path="report" element={<ReportPage />} />
+          <Route path="tickets" element={<EnterpriseTicketList />} />
+          <Route path="tickets/:id" element={<TicketThread base="/app" />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="change-password" element={<ChangePasswordPage next="/app" />} />
         </Routes>
         </div>
       </main>
+      </div>
     </div>
   );
 }
@@ -103,6 +123,7 @@ function StatusHome({ me }: { me: Me }) {
       <h1 className="text-2xl font-extrabold tracking-tight text-navy" data-testid="status-title">{status}</h1>
       <p className="mt-2 text-sm text-muted" data-testid="status-message">{text[status]}</p>
       {status === "需补传" ? <Banner tone="error">{me.enterprise?.status_note}</Banner> : null}
+      <ConsultantCard testId="my-consultant" />
       <div className="flex gap-2">
         {["待上传", "识别中", "需补传"].includes(status) ? <Button asChild><Link to="/app/upload">去上传</Link></Button> : null}
         {status === "已发布" ? <Button asChild><Link to="/app/report">查看方案</Link></Button> : null}

@@ -11,6 +11,7 @@ import { formatRange } from "@shared/rules/evaluate";
 import { api } from "../lib/api";
 import { Banner, BrandMark, Button, Card, EmptyState, Input, Label, PageHeader, StatCard, Textarea, TierBadge } from "../components/ui";
 import { ChangePasswordPage, SelfPasswordForm } from "./AuthPages";
+import { StaffProfile, StaffTicketList, TicketThread } from "./serviceDesk";
 
 const filterSelect = "min-w-[9.5rem] shrink-0 rounded-[11px] border border-[#d8e1ef] bg-white px-3 py-2.5 text-[15px] leading-6 text-ink";
 
@@ -18,6 +19,7 @@ const groups = [
   { label: "工作台", items: [
     { to: "/admin", label: "待办", icon: "▣", end: true },
     { to: "/admin/enterprises", label: "企业", icon: "◎" },
+    { to: "/admin/tickets", label: "工单", icon: "✉" },
   ]},
   { label: "成交", items: [
     { to: "/admin/deals/policy", label: "政策线", icon: "▤" },
@@ -34,6 +36,7 @@ const groups = [
     { to: "/admin/users", label: "账号", icon: "○" },
     { to: "/admin/audit", label: "审计", icon: "✓" },
     { to: "/admin/settings", label: "设置", icon: "⚙" },
+    { to: "/admin/profile", label: "我的资料", icon: "☺" },
     { to: "/admin/password", label: "修改密码", icon: "✱" },
   ]},
 ];
@@ -85,7 +88,11 @@ export function AdminApp() {
   const [error, setError] = useState("");
   const [menu, setMenu] = useState(false);
   const [feedback, setFeedback] = useState("");
+  const [unread, setUnread] = useState(0);
   const location = useLocation();
+  useEffect(() => {
+    api<{ count: number }>("/api/tickets/unread").then((res) => setUnread(res.count || 0)).catch(() => setUnread(0));
+  }, [location.pathname]);
   useEffect(() => {
     api<{ user: { role: string; must_change_password: boolean; name: string } }>("/api/me").then(setMe).catch((err) => setError(err.message));
   }, []);
@@ -124,6 +131,7 @@ export function AdminApp() {
                     <NavLink key={item.to} to={item.to} end={item.end} className="nav-pill">
                       <span className="nav-icon" aria-hidden="true">{item.icon}</span>
                       {item.label}
+                      {item.to === "/admin/tickets" && unread > 0 ? <span aria-hidden="true" data-testid="ticket-dot" className="ml-auto inline-block h-2 w-2 shrink-0 rounded-full bg-[#e11d48]" /> : null}
                     </NavLink>
                   ))}
                 </div>
@@ -157,6 +165,9 @@ export function AdminApp() {
           <Route path="users" element={<Users />} />
           <Route path="audit" element={<Audit />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="profile" element={<StaffProfile />} />
+          <Route path="tickets" element={<StaffTicketList />} />
+          <Route path="tickets/:id" element={<TicketThread base="/admin" />} />
           <Route path="password" element={<MyPassword />} />
           <Route path="change-password" element={<ChangePasswordPage next="/admin" />} />
         </Routes>
@@ -165,6 +176,31 @@ export function AdminApp() {
         </div>
         </main>
       </div>
+    </div>
+  );
+}
+
+function AssignConsultant({ enterpriseId, assignedId, report }: { enterpriseId: string; assignedId: string; report: (text: string) => void }) {
+  const admin = useIsAdmin();
+  const [chosen, setChosen] = useState(assignedId);
+  const [users, setUsers] = useState<{ id: string; name: string; phone: string }[]>([]);
+  useEffect(() => { setChosen(assignedId); }, [assignedId]);
+  useEffect(() => {
+    if (!admin) return;
+    api<{ users: { id: string; name: string; phone: string }[] }>("/api/admin/consultants").then((res) => setUsers(res.users)).catch(() => setUsers([]));
+  }, [admin]);
+  if (!admin) return null;
+  return (
+    <div className="mt-3 flex flex-col gap-2 border-t border-[#e4eaf4] pt-3 sm:flex-row sm:items-center">
+      <Label>专属顾问</Label>
+      <select className={filterSelect} value={chosen} onChange={(e) => setChosen(e.target.value)} data-testid="consultant-select">
+        <option value="">未分配</option>
+        {users.map((user) => <option key={user.id} value={user.id}>{user.name} {user.phone}</option>)}
+      </select>
+      <Button type="button" data-testid="assign-consultant" onClick={() => run(report, async () => {
+        await api(`/api/admin/enterprises/${enterpriseId}/consultant`, { method: "PATCH", body: JSON.stringify({ consultant_id: chosen || null }) });
+        return chosen ? "已保存顾问分配" : "已取消顾问分配";
+      })}>保存顾问</Button>
     </div>
   );
 }
@@ -455,6 +491,7 @@ function EnterpriseDetail() {
           <p>信用代码：{ent.uscc || "待补"}（{ent.uscc_source || "未识别"}）</p>
           <p>主体：{ent.entity_type || "待补"} · 地区：{ent.city || "待补"} {ent.region_code || ""} {ent.town || ""}</p>
         </div>
+        <AssignConsultant enterpriseId={id} assignedId={ent.assigned_consultant_id || ""} report={report} />
         {warnings.map((w) => <Banner key={w} tone={w.includes("重复") || w.includes("不一致") ? "error" : "warn"}>{w}{ent.dup_enterprise_id && w.includes("重复") ? <Link className="ml-2 underline" to={`/admin/enterprises/${ent.dup_enterprise_id}`}>查看另一家</Link> : null}</Banner>)}
         {data.dup ? <p className="text-sm">疑似与 <Link className="text-[#1e4fc8]" to={`/admin/enterprises/${data.dup.id}`}>{data.dup.name}</Link> 重复</p> : null}
       </Card>
@@ -1535,6 +1572,7 @@ function SettingsBody() {
           settings: {
             consultant_phone: form.get("consultant_phone"),
             consultant_wechat: form.get("consultant_wechat"),
+            general_contact_placeholder: form.get("general_contact_placeholder"),
             estimate_bands: JSON.stringify(checked.bands),
             ...(webhook.startsWith("https://") ? { wecom_webhook: webhook } : {}),
           },
@@ -1555,6 +1593,8 @@ function SettingsBody() {
         <Input name="consultant_phone" defaultValue={data.settings.consultant_phone || ""} data-testid="consultant-phone" />
         <Label>顾问微信</Label>
         <Input name="consultant_wechat" defaultValue={data.settings.consultant_wechat || ""} />
+        <Label>未分配顾问时的说明</Label>
+        <Textarea name="general_contact_placeholder" defaultValue={data.settings.general_contact_placeholder || ""} data-testid="general-contact" />
         <Label>企业微信机器人 webhook</Label>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <Input key={webhookShown ? "webhook-shown" : "webhook-hidden"} className="sm:min-w-0 sm:flex-1" name="wecom_webhook" type={webhookShown ? "text" : "password"} value={webhookText} onChange={(e) => setWebhookText(e.target.value)} placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..." autoComplete="off" data-testid="webhook-url" />

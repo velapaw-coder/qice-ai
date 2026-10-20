@@ -141,6 +141,33 @@ adminRoutes.get("/admin/enterprises/:id", async (c) => {
   });
 });
 
+adminRoutes.get("/admin/consultants", async (c) => {
+  if (!adminOnly(c.get("role"))) return c.json({ error: "只有管理员可以分配顾问" }, 403);
+  const rows = await c.env.DB.prepare(
+    "SELECT id, name, phone, contact_phone, wechat_id FROM users WHERE role = 'consultant' AND status = 'active' ORDER BY created_at",
+  ).all();
+  return c.json({ users: rows.results || [] });
+});
+
+adminRoutes.patch("/admin/enterprises/:id/consultant", async (c) => {
+  if (!adminOnly(c.get("role"))) return c.json({ error: "只有管理员可以分配顾问" }, 403);
+  const ent = await getEnterprise(c.env.DB, c.req.param("id"));
+  if (!ent) return c.json({ error: "企业不存在" }, 404);
+  const body = await readJson<{ consultant_id?: string | null }>(c.req.raw);
+  if (!body) return c.json({ error: "无法读取" }, 400);
+  let consultantId: string | null = null;
+  if (body.consultant_id) {
+    const user = await c.env.DB.prepare("SELECT id FROM users WHERE id = ? AND role = 'consultant' AND status = 'active'")
+      .bind(body.consultant_id)
+      .first<{ id: string }>();
+    if (!user) return c.json({ error: "请选择在职顾问" }, 400);
+    consultantId = user.id;
+  }
+  await c.env.DB.prepare("UPDATE enterprises SET assigned_consultant_id = ? WHERE id = ?").bind(consultantId, ent.id).run();
+  await audit(c.env.DB, c.get("userId"), "enterprise.assign_consultant", "enterprise", ent.id, clientIp(c.req.raw), { consultant_id: consultantId });
+  return c.json({ ok: true, consultant_id: consultantId });
+});
+
 adminRoutes.patch("/admin/enterprises/:id", async (c) => {
   const ent = await getEnterprise(c.env.DB, c.req.param("id"));
   if (!ent) return c.json({ error: "企业不存在" }, 404);
@@ -724,7 +751,7 @@ adminRoutes.put("/admin/settings", async (c) => {
   if (!adminOnly(c.get("role"))) return c.json({ error: "只有管理员可以改系统设置" }, 403);
   const body = await readJson<{ settings?: Record<string, string>; clear_model_slots?: boolean }>(c.req.raw);
   if (!body?.settings) return c.json({ error: "缺少设置" }, 400);
-  const allowed = ["consultant_phone", "consultant_wechat", "wecom_webhook", "llm_text_primary", "llm_text_fallback", "llm_vision_primary", "llm_vision_fallback", "estimate_bands"];
+  const allowed = ["consultant_phone", "consultant_wechat", "general_contact_placeholder", "wecom_webhook", "llm_text_primary", "llm_text_fallback", "llm_vision_primary", "llm_vision_fallback", "estimate_bands"];
   if (MODEL_SLOT_KEYS.some((key) => Object.prototype.hasOwnProperty.call(body.settings, key))) {
     const rows = await c.env.DB.prepare(
       `SELECT key, value FROM settings WHERE key IN (${MODEL_SLOT_KEYS.map(() => "?").join(",")})`,
@@ -1223,6 +1250,7 @@ const AUDIT_TYPE_LABEL: Record<string, string> = {
   appointment: "预约",
   policy_deal: "政策成交",
   fde_deal: "FDE 成交",
+  ticket: "工单",
 };
 
 async function nameMap(db: D1Database, sql: string, ids: string[]): Promise<Map<string, string>> {
@@ -1236,7 +1264,7 @@ async function nameMap(db: D1Database, sql: string, ids: string[]): Promise<Map<
 
 async function decorateAudit(db: D1Database, logs: AuditRow[]) {
   const ids = (type: string) => logs.filter((log) => log.target_type === type && log.target_id).map((log) => log.target_id as string);
-  const [enterprises, policies, users, drafts, providers, files, assessments, deals, fde, appointments, runs] = await Promise.all([
+  const [enterprises, policies, users, drafts, providers, files, assessments, deals, fde, appointments, runs, ticketNames] = await Promise.all([
     nameMap(db, "SELECT id, name FROM enterprises WHERE id IN (?)", ids("enterprise")),
     nameMap(db, "SELECT id, name FROM policies WHERE id IN (?)", ids("policy")),
     nameMap(db, "SELECT id, name FROM users WHERE id IN (?)", ids("user")),
@@ -1248,6 +1276,7 @@ async function decorateAudit(db: D1Database, logs: AuditRow[]) {
     nameMap(db, "SELECT d.id, e.name FROM fde_deals d JOIN enterprises e ON e.id = d.enterprise_id WHERE d.id IN (?)", ids("fde_deal")),
     nameMap(db, "SELECT a.id, e.name FROM appointments a JOIN enterprises e ON e.id = a.enterprise_id WHERE a.id IN (?)", ids("appointment")),
     nameMap(db, "SELECT id, json_extract(errors_json, '$.source_name') AS name FROM crawl_runs WHERE id IN (?)", ids("crawl_run")),
+    nameMap(db, "SELECT id, title AS name FROM tickets WHERE id IN (?)", ids("ticket")),
   ]);
   const maps: Record<string, Map<string, string>> = {
     enterprise: enterprises,
@@ -1261,6 +1290,7 @@ async function decorateAudit(db: D1Database, logs: AuditRow[]) {
     fde_deal: fde,
     appointment: appointments,
     crawl_run: runs,
+    ticket: ticketNames,
   };
   return logs.map((log) => {
     const type = log.target_type || "";

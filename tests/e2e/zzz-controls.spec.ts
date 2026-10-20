@@ -135,6 +135,8 @@ test("管理员、顾问和企业端每个可见按钮都有反馈", async ({ br
       "/admin/users",
       "/admin/audit",
       "/admin/settings",
+      "/admin/tickets",
+      "/admin/profile",
     ];
     for (const route of adminRoutes) {
       await adminPage.goto(route);
@@ -196,7 +198,7 @@ test("管理员、顾问和企业端每个可见按钮都有反馈", async ({ br
     await audit(consultantPage);
 
     await login(companyPage, "13700000001", "Aihua1234");
-    for (const route of ["/app", "/app/upload", "/app/report", "/app/settings"]) {
+    for (const route of ["/app", "/app/upload", "/app/report", "/app/settings", "/app/tickets"]) {
       await companyPage.goto(route);
       await expect(companyPage.locator("main")).toBeVisible();
       await audit(companyPage);

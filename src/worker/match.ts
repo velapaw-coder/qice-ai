@@ -21,6 +21,7 @@ export interface EntRow {
   status_note: string | null;
   warnings_json: string;
   account_status: string;
+  assigned_consultant_id: string | null;
 }
 
 export async function getEnterprise(db: D1Database, id: string): Promise<EntRow | null> {

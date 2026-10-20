@@ -19,6 +19,9 @@ enterpriseRoutes.get("/me", async (c) => {
   const ent = c.get("enterpriseId")
     ? await getEnterprise(c.env.DB, c.get("enterpriseId")!)
     : null;
+  const contact = await c.env.DB.prepare("SELECT contact_phone, wechat_id, wechat_qr_r2_key FROM users WHERE id = ?")
+    .bind(c.get("userId"))
+    .first<{ contact_phone: string; wechat_id: string; wechat_qr_r2_key: string | null }>();
   return c.json({
     user: {
       id: c.get("userId"),
@@ -26,6 +29,9 @@ enterpriseRoutes.get("/me", async (c) => {
       name: c.get("name"),
       role: c.get("role"),
       must_change_password: c.get("mustChange"),
+      contact_phone: contact?.contact_phone || "",
+      wechat_id: contact?.wechat_id || "",
+      has_qr: Boolean(contact?.wechat_qr_r2_key),
     },
     enterprise: ent
       ? {
