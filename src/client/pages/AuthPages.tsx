@@ -9,7 +9,7 @@ function Shell({ title, children }: { title: string; children: React.ReactNode }
     <div className="min-h-screen bg-bg">
       <header className="bg-gradient-to-r from-[#0c1936] to-[#16356f] text-white">
         <div className="mx-auto flex h-16 w-full max-w-lg items-center justify-between px-4">
-          <Link to="/" className="flex items-center gap-2 text-xl font-extrabold tracking-tight"><BrandMark light />企策AI</Link>
+          <Link to="/" className="flex items-center gap-2 text-xl font-extrabold tracking-tight"><BrandMark size={36} />企策AI</Link>
           <Link to="/login" className="text-sm font-semibold text-[#d5e2f7]">登录</Link>
         </div>
       </header>

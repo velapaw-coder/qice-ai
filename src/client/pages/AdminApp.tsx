@@ -13,7 +13,7 @@ import { Banner, BrandMark, Button, Card, EmptyState, Input, Label, PageHeader, 
 import { ChangePasswordPage, SelfPasswordForm } from "./AuthPages";
 import { StaffProfile, StaffTicketList, TicketThread } from "./serviceDesk";
 
-const filterSelect = "min-w-[9.5rem] shrink-0 rounded-[11px] border border-[#d8e1ef] bg-white px-3 py-2.5 text-[15px] leading-6 text-ink";
+const filterSelect = "app-select min-w-[9.5rem] shrink-0 rounded-[11px] border border-[#d8e1ef] bg-white px-3 text-[15px] text-ink";
 
 const groups = [
   { label: "工作台", items: [
@@ -109,7 +109,7 @@ export function AdminApp() {
     <div className="flex h-dvh min-h-0 flex-col bg-bg">
       <header className="z-30 flex h-14 shrink-0 items-center gap-3 bg-gradient-to-r from-[#0c1936] to-[#16356f] px-3 text-white" data-testid="admin-header">
         <button type="button" className="grid h-10 w-10 place-items-center rounded-xl bg-white/10 lg:hidden" data-testid="admin-menu" aria-label="打开菜单" onClick={() => setMenu(true)}>☰</button>
-        <Link to="/admin" className="flex items-center gap-2 text-lg font-extrabold tracking-tight"><BrandMark light />企策AI</Link>
+        <Link to="/admin" className="flex items-center gap-2 text-lg font-extrabold tracking-tight"><BrandMark size={32} />企策AI</Link>
         <span className="ml-auto hidden text-xs font-semibold text-[#d5e2f7] sm:inline" data-testid="workspace-label">{me.user.role === "admin" ? "管理员工作台" : "顾问工作台"}</span>
       </header>
       <div className="flex min-h-0 flex-1">

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../lib/api";
+import { BrandMark } from "../components/ui";
 
 function render(md: string) {
   const lines = md.split("\n");
@@ -44,7 +45,7 @@ export function LegalPage() {
     <div className="min-h-screen bg-bg">
       <header className="border-b border-line bg-white">
         <div className="mx-auto flex h-16 max-w-3xl items-center justify-between px-4">
-          <Link to="/" className="font-extrabold text-navy">企策AI</Link>
+          <Link to="/" className="flex items-center gap-2 font-extrabold text-navy"><BrandMark size={32} />企策AI</Link>
           <span className="text-sm text-muted">{titles[doc] || "文档"} · 模板，待法务确认</span>
         </div>
       </header>

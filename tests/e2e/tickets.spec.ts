@@ -141,6 +141,15 @@ test("专属顾问、工单和跨角色权限", async ({ browser }: { browser: B
     await adminPage.getByTestId("ticket-assignee").selectOption({ label: "工单顾问乙" });
     await adminPage.getByTestId("ticket-reassign").click();
     await expect(adminPage.getByRole("heading", { name: "补贴材料怎么补" })).toBeVisible();
+    await otherConsultant.goto("/admin/tickets");
+    await expect(otherConsultant.getByTestId("ticket-dot")).toBeVisible();
+    await otherConsultant.getByTestId("ticket-filter-progress").click();
+    await expect(otherConsultant.getByTestId("ticket-filter-label")).toHaveText("处理中工单");
+    await otherConsultant.getByTestId("ticket-filter-resolved").click();
+    await expect(otherConsultant.getByTestId("ticket-filter-label")).toHaveText("已解决工单");
+    await otherConsultant.getByTestId("ticket-filter-open").click();
+    await expect(otherConsultant.getByTestId("ticket-filter-label")).toHaveText("待处理工单");
+    await expect(otherConsultant.getByRole("link", { name: /补贴材料怎么补/ })).toBeVisible();
     expect((await otherConsultant.request.get(`/api/tickets/${ticketId}`)).status()).toBe(200);
     expect((await consultantPage.request.get(`/api/tickets/${ticketId}`)).status()).toBe(200);
 

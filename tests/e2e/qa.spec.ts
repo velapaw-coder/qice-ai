@@ -418,6 +418,7 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
     await expect(customPage.getByTestId("admin-home")).toBeVisible();
     await expect(customPage.getByTestId("change-password")).toHaveCount(0);
     await customPage.goto("/admin/password");
+    await expect(customPage).toHaveURL(/\/admin\/password$/);
     await expect(customPage.getByTestId("self-password")).toBeVisible();
     await customPage.getByTestId("self-old").fill("Wrong1234");
     await customPage.getByTestId("self-new").fill("Custom2234");
@@ -499,6 +500,7 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
     await expect(photoPage.getByTestId("file-progress")).toContainText("识别完成", { timeout: 30_000 });
 
     await smallPage.goto("/app/settings");
+    await expect(smallPage).toHaveURL(/\/app\/settings$/);
     await expect(smallPage.getByTestId("self-password")).toBeVisible();
     await smallPage.getByTestId("self-old").fill("Wrong1234");
     await smallPage.getByTestId("self-new").fill("Small2234");
@@ -562,6 +564,7 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
       "/admin/users",
       "/admin/audit",
       "/admin/settings",
+      "/admin/password",
       "/admin/change-password",
     ];
     for (const route of routes) {

@@ -42,7 +42,7 @@ export function EnterpriseApp() {
       <header className="no-print z-30 shrink-0 bg-gradient-to-r from-[#0c1936] to-[#16356f] text-white">
         <div className="mx-auto flex min-h-16 max-w-3xl items-center justify-between gap-3 px-4">
           <button type="button" className="grid h-10 w-10 place-items-center rounded-xl bg-white/10 sm:hidden" data-testid="enterprise-menu" aria-label="打开菜单" onClick={() => setMenu(true)}>☰</button>
-          <Link to="/app" className="flex shrink-0 items-center gap-2 text-lg font-extrabold tracking-tight"><BrandMark light />企策AI</Link>
+          <Link to="/app" className="flex shrink-0 items-center gap-2 text-lg font-extrabold tracking-tight"><BrandMark size={36} />企策AI</Link>
           <nav className="hidden gap-1 text-sm whitespace-nowrap sm:flex">
             {nav.map((item) => (
               <NavLink key={item.to} to={item.to} className="nav-pill nav-pill-top">
