@@ -189,7 +189,8 @@ export function SelfPasswordForm({ next }: { next: string }) {
   }, []);
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!phone) return setError("正在读取账号，请稍后再保存");
+    if (!phone) return setError("账号还在读取，请稍后再保存");
+    if (!oldPassword) return setError("请填写当前密码");
     const problem = passwordError(password);
     if (problem) return setError(problem);
     if (password !== confirm) return setError("两次输入的密码不一致");
@@ -206,7 +207,7 @@ export function SelfPasswordForm({ next }: { next: string }) {
     }
   }
   return (
-    <form onSubmit={onSubmit} className="space-y-3" data-testid="self-password">
+    <form noValidate onSubmit={onSubmit} className="space-y-3" data-testid="self-password">
       <p className="text-sm text-muted">当前账号 {phone || "读取中"}。密码在浏览器里加密后再提交。</p>
       <Label>当前密码</Label>
       <Input type="password" required value={oldPassword} onChange={(e) => setOldPassword(e.target.value)} autoComplete="current-password" data-testid="self-old" />
