@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  GOOGLE_VERIFY_BODY,
+  GOOGLE_VERIFY_CONTENT_TYPE,
   KEYWORDS,
   OG_IMAGE,
   ROBOTS_CONTENT_TYPE,
@@ -61,6 +63,7 @@ describe("公开页 SEO", () => {
     expect(canonicalFor("qice.chang2.ccwu.cc", "/")).toBe("https://goqice.com/");
     expect(canonicalFor("127.0.0.1:43123", "/")).toBe("https://goqice.com/");
     expect(html).toContain('rel="canonical" href="https://goqice.com/"');
+    expect(html).toContain('name="google-site-verification" content="QUFnL2SkqIMTjBYg4f9jG-caFdtmHLNAp1ikX6XdWYI"');
     expect(html).toContain(`content="${KEYWORDS}"`);
     expect(html).toContain(`property="og:image" content="${OG_IMAGE}"`);
     expect(html).toContain('name="twitter:card" content="summary_large_image"');
@@ -86,6 +89,7 @@ describe("公开页 SEO", () => {
       expect(html).toContain(`rel="canonical" href="https://goqice.com${path}"`);
       expect(html).not.toContain("员工超过10人就一定能获得补贴吗？");
       expect(html).not.toContain("og:image");
+      expect(html).not.toContain("google-site-verification");
       expect(documentHeaders(path)["x-robots-tag"]).toBe("noindex, nofollow");
     }
     expect(canonicalFor("qice.chang2.ccwu.cc", "/admin")).toBe("https://goqice.com/admin");
@@ -96,6 +100,7 @@ describe("公开页 SEO", () => {
     expect(privacy).toContain("<h1>隐私政策</h1>");
     expect(privacy).toContain("模板，待法务确认");
     expect(privacy).toContain('rel="canonical" href="https://goqice.com/legal/privacy"');
+    expect(privacy).toContain('name="google-site-verification" content="QUFnL2SkqIMTjBYg4f9jG-caFdtmHLNAp1ikX6XdWYI"');
     expect(privacy).not.toContain("noindex");
     const unknown = decorateHtml(shell, "/legal/other");
     expect(shouldNoindex("/legal/other")).toBe(true);
@@ -103,9 +108,14 @@ describe("公开页 SEO", () => {
     expect(unknown).not.toContain("让政策红利");
   });
 
+  it("Google 验证文件只有那一行", () => {
+    expect(readFileSync("public/googled5c7c4e254bd8e0c.html", "utf8")).toBe(GOOGLE_VERIFY_BODY);
+    expect(GOOGLE_VERIFY_CONTENT_TYPE.startsWith("text/html")).toBe(true);
+  });
+
   it("wrangler 让文档路由先进入 Worker，静态资源仍不经过 Worker", () => {
     const raw = readFileSync("wrangler.jsonc", "utf8");
-    for (const route of ["/", "/robots.txt", "/sitemap.xml", "/login", "/register", "/legal/*", "/admin", "/admin/*", "/app", "/app/*", "/api/*"]) {
+    for (const route of ["/", "/robots.txt", "/sitemap.xml", "/googled5c7c4e254bd8e0c.html", "/login", "/register", "/legal/*", "/admin", "/admin/*", "/app", "/app/*", "/api/*"]) {
       expect(raw).toContain(`"${route}"`);
     }
     expect(raw).not.toMatch(/"run_worker_first"\s*:\s*true/);

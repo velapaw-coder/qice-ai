@@ -6,7 +6,7 @@ import { enterpriseRoutes } from "./routes/enterprise";
 import { llmRoutes } from "./routes/llm";
 import { publicRoutes } from "./routes/public";
 import { ticketRoutes } from "./routes/tickets";
-import { decorateHtml, documentHeaders, pageKind, robotsTxt, sitemapXml, ROBOTS_CONTENT_TYPE, SITEMAP_CONTENT_TYPE } from "./seo";
+import { decorateHtml, documentHeaders, pageKind, robotsTxt, sitemapXml, GOOGLE_VERIFY_BODY, GOOGLE_VERIFY_CONTENT_TYPE, GOOGLE_VERIFY_PATH, ROBOTS_CONTENT_TYPE, SITEMAP_CONTENT_TYPE } from "./seo";
 import { loadSession, type Env, type Role, type Vars } from "./util";
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -25,6 +25,11 @@ app.use("*", async (c, next) => {
     const headers = { "content-type": SITEMAP_CONTENT_TYPE, "cache-control": "public, max-age=3600" };
     if (c.req.method === "HEAD") return c.body(null, 200, headers);
     return c.body(sitemapXml(), 200, headers);
+  }
+  if (normalized === GOOGLE_VERIFY_PATH) {
+    const headers = { "content-type": GOOGLE_VERIFY_CONTENT_TYPE, "cache-control": "public, max-age=3600" };
+    if (c.req.method === "HEAD") return c.body(null, 200, headers);
+    return c.body(GOOGLE_VERIFY_BODY, 200, headers);
   }
   if (!pageKind(normalized)) return next();
   const assetUrl = new URL(c.req.url);

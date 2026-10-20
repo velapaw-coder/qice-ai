@@ -8,6 +8,10 @@ export const OG_IMAGE = `${SITE}/og.png`;
 
 export const ROBOTS_CONTENT_TYPE = "text/plain; charset=utf-8";
 export const SITEMAP_CONTENT_TYPE = "application/xml; charset=utf-8";
+export const GOOGLE_SITE_VERIFICATION = "QUFnL2SkqIMTjBYg4f9jG-caFdtmHLNAp1ikX6XdWYI";
+export const GOOGLE_VERIFY_PATH = "/googled5c7c4e254bd8e0c.html";
+export const GOOGLE_VERIFY_BODY = "google-site-verification: googled5c7c4e254bd8e0c.html\n";
+export const GOOGLE_VERIFY_CONTENT_TYPE = "text/html; charset=utf-8";
 
 const LEGAL_TITLES: Record<string, string> = {
   privacy: "隐私政策",
@@ -118,6 +122,7 @@ function headTags(path: string): string {
     : SITE_DESCRIPTION;
   return [
     `<link rel="canonical" href="${esc(canonical)}" />`,
+    `<meta name="google-site-verification" content="${GOOGLE_SITE_VERIFICATION}" />`,
     `<meta name="keywords" content="${esc(KEYWORDS)}" />`,
     `<meta property="og:title" content="${esc(title)}" />`,
     `<meta property="og:description" content="${esc(description)}" />`,
