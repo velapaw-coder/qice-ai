@@ -114,6 +114,7 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
   await adminPage.getByTestId("user-phone").fill("13900000001");
   await adminPage.getByTestId("user-role").selectOption("consultant");
   await adminPage.getByRole("button", { name: "生成临时密码并创建" }).click();
+  await expect(adminPage.getByTestId("temp-password")).toContainText("临时密码：", { timeout: 60_000 });
   const tempText = await adminPage.getByTestId("temp-password").innerText();
   const tempPassword = tempText.match(/临时密码：([^。\s]+)/)?.[1];
   expect(tempPassword).toBeTruthy();

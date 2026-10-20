@@ -27,7 +27,8 @@ async function login(page: Page, phone: string, password: string) {
 
 async function tempPassword(page: Page, phone: string) {
   const locator = page.getByTestId("temp-password");
-  await expect(locator).toContainText(phone, { timeout: 60_000 });
+  await expect(locator).toContainText("临时密码：", { timeout: 60_000 });
+  await expect(locator).toContainText(phone);
   const text = await locator.innerText();
   const password = text.match(/临时密码：([^。\s]+)/)?.[1];
   expect(password).toBeTruthy();

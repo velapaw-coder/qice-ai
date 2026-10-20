@@ -1263,6 +1263,7 @@ function UsersBody() {
   const { data, error, reload } = useData<{ users: { id: string; phone: string; name: string; role: string }[] }>("/api/admin/users");
   const notify = useNotify();
   const [temp, setTemp] = useState("");
+  const [pending, setPending] = useState("");
   const [formError, setFormError] = useState("");
   const [busy, setBusy] = useState(false);
   const [customPassword, setCustomPassword] = useState("");
@@ -1276,7 +1277,14 @@ function UsersBody() {
   const [showReset, setShowReset] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [forceReset, setForceReset] = useState(false);
-  const report = (value: string) => setTemp(value);
+  const report = (value: string) => {
+    setPending("");
+    setTemp(value);
+  };
+  const notice = (value: string) => {
+    setTemp("");
+    setPending(value);
+  };
   function accountFields() {
     const form = document.querySelector<HTMLFormElement>("[data-testid='create-user']");
     const data = form ? new FormData(form) : new FormData();
@@ -1295,7 +1303,7 @@ function UsersBody() {
     }
     setFormError("");
     setBusy(true);
-    report(`正在为 ${phone} 生成临时密码…`);
+    notice(`正在为 ${phone} 生成临时密码…`);
     try {
       await new Promise((resolve) => setTimeout(resolve, 30));
       const password = `Tmp${Math.random().toString(36).slice(2, 8)}9A`;
@@ -1304,6 +1312,7 @@ function UsersBody() {
       report(`${phone} 的临时密码：${password}。请电话告知，对方首次登录必须修改。`);
       reload();
     } catch (err) {
+      setPending("");
       setFormError(err instanceof Error ? err.message : "创建失败");
     } finally {
       setBusy(false);
@@ -1322,7 +1331,7 @@ function UsersBody() {
     }
     setFormError("");
     setBusy(true);
-    report(`正在为 ${phone} 保存自定义密码…`);
+    notice(`正在为 ${phone} 保存自定义密码…`);
     try {
       const client_key = await deriveClientKey(phone, customPassword);
       await api("/api/admin/users", { method: "POST", body: JSON.stringify({ phone, name, role, client_key, must_change_password: forceCreate }) });
@@ -1331,6 +1340,7 @@ function UsersBody() {
       setCustomConfirm("");
       reload();
     } catch (err) {
+      setPending("");
       setFormError(err instanceof Error ? err.message : "创建失败");
     } finally {
       setBusy(false);
@@ -1343,7 +1353,7 @@ function UsersBody() {
     }
     setFormError("");
     setBusy(true);
-    report(`正在为 ${resetUser.phone} 生成临时密码…`);
+    notice(`正在为 ${resetUser.phone} 生成临时密码…`);
     try {
       await new Promise((resolve) => setTimeout(resolve, 30));
       const password = `Rst${Math.random().toString(36).slice(2, 8)}9A`;
@@ -1351,6 +1361,7 @@ function UsersBody() {
       await api(`/api/admin/users/${resetUser.id}/reset-password`, { method: "POST", body: JSON.stringify({ client_key, must_change_password: true }) });
       report(`${resetUser.phone} 的临时密码：${password}。对方下次登录必须修改。`);
     } catch (err) {
+      setPending("");
       setFormError(err instanceof Error ? err.message : "重置失败");
     } finally {
       setBusy(false);
@@ -1368,7 +1379,7 @@ function UsersBody() {
     }
     setFormError("");
     setBusy(true);
-    report(`正在为 ${resetUser.phone} 保存自定义密码…`);
+    notice(`正在为 ${resetUser.phone} 保存自定义密码…`);
     try {
       const client_key = await deriveClientKey(resetUser.phone, resetPassword);
       await api(`/api/admin/users/${resetUser.id}/reset-password`, { method: "POST", body: JSON.stringify({ client_key, must_change_password: forceReset }) });
@@ -1376,6 +1387,7 @@ function UsersBody() {
       setResetPassword("");
       setResetConfirm("");
     } catch (err) {
+      setPending("");
       setFormError(err instanceof Error ? err.message : "重置失败");
     } finally {
       setBusy(false);
@@ -1402,6 +1414,7 @@ function UsersBody() {
           </div>
         </form>
         {formError ? <Banner tone="error">{formError}</Banner> : null}
+        {pending ? <p className="mt-3 text-sm text-muted">{pending}</p> : null}
         {temp ? <p className="mt-3 text-sm" data-testid="temp-password">{temp}</p> : null}
       </Card>
       <Card>
@@ -1409,7 +1422,7 @@ function UsersBody() {
         {(data?.users || []).length === 0 ? <EmptyState title="还没有账号" /> : (
           <table className="app-table">
             <thead><tr><th>姓名</th><th>手机号</th><th>角色</th><th></th></tr></thead>
-            <tbody>{(data?.users || []).map((user) => <tr key={user.id}><td>{user.name}</td><td>{user.phone}</td><td>{user.role}</td><td><button type="button" className="whitespace-nowrap text-sm font-semibold text-[#1e4fc8]" data-testid={`reset-${user.phone}`} disabled={busy} onClick={() => { setResetUser(user); setForceReset(false); setResetPassword(""); setResetConfirm(""); setFormError(""); report(`正在为 ${user.phone} 设置密码`); }}>重置密码</button></td></tr>)}</tbody>
+            <tbody>{(data?.users || []).map((user) => <tr key={user.id}><td>{user.name}</td><td>{user.phone}</td><td>{user.role}</td><td><button type="button" className="whitespace-nowrap text-sm font-semibold text-[#1e4fc8]" data-testid={`reset-${user.phone}`} disabled={busy} onClick={() => { setResetUser(user); setForceReset(false); setResetPassword(""); setResetConfirm(""); setFormError(""); notice(`正在为 ${user.phone} 设置密码`); }}>重置密码</button></td></tr>)}</tbody>
           </table>
         )}
         {resetUser ? (
