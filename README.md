@@ -87,7 +87,7 @@ Workers 的速率限制绑定只支持 10 秒或 60 秒窗口，所以 `REGISTER
 ## 架构说明
 
 - 前端是 Vite + React，构建到 `dist/client`。`wrangler dev` 用静态资源托管页面，只有 `/api/*` 进入 Worker。
-- 接口用 Hono。运行时没有用 Drizzle，避免在免费版 CPU 预算里做查询构建；表结构在 `migrations/`。
+- 接口用 Hono。运行时没有用 Drizzle，避免在免费版 CPU 预算里做查询构建；表结构在 `migrations/`。`0003_consultant_tickets.sql` 只追加员工联系方式和工单表，企业顾问仍用原来的 `assigned_consultant_id`。
 - 数据库是 D1，文件在私有 R2，不做应用层整文件加密。模型密钥用 `SETTINGS_ENC_KEY` 做 AES-GCM，界面只显示后 4 位。
 - 密码：浏览器 PBKDF2-SHA256 60 万次，盐是 `qice-v1:` 加手机号。Worker 只对客户端密钥做 HMAC-SHA256，胡椒是 `PEPPER`。
 - 规则在 `seed/policies.json`，迁移时以草稿写入。只有管理员启用后才参与匹配。

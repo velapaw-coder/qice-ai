@@ -5,6 +5,7 @@ import { adminRoutes } from "./routes/admin";
 import { enterpriseRoutes } from "./routes/enterprise";
 import { llmRoutes } from "./routes/llm";
 import { publicRoutes } from "./routes/public";
+import { ticketRoutes } from "./routes/tickets";
 import { loadSession, type Env, type Role, type Vars } from "./util";
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -46,6 +47,7 @@ function isPublic(path: string, method: string): boolean {
 
 app.route("/api", publicRoutes);
 app.route("/api", enterpriseRoutes);
+app.route("/api", ticketRoutes);
 app.route("/api", adminRoutes);
 app.route("/api", llmRoutes);
 
