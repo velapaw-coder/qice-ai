@@ -4,6 +4,7 @@ import { zipSync } from "fflate";
 import { MODEL_SLOT_KEYS } from "@shared/modelSlots";
 import { adoptBlockedReason } from "@shared/policyDraft";
 import { formatShanghai } from "@shared/policyPage";
+import { SOURCE_SCHEDULE_TEXT } from "@shared/schedule";
 import { deriveClientKey } from "@shared/password";
 import { formatPublicBand, parseBands, validateBands, type EstimateBand } from "@shared/bands";
 import { formatRange } from "@shared/rules/evaluate";
@@ -997,7 +998,7 @@ function Sources() {
   }
   return (
     <div className="space-y-4" data-testid="policy-sources">
-    <PageHeader kicker="政策" title="抓取来源" description="默认停用。上线前逐个试抓，确认能访问再启用。自动抓取失败不影响企业方案。" />
+    <PageHeader kicker="政策" title="抓取来源" description={`默认停用。上线前逐个试抓，确认能访问再启用。${SOURCE_SCHEDULE_TEXT}已启用来源。抓取失败不影响企业方案。`} />
     <Card>
       <h2 className="font-semibold text-navy">添加来源</h2>
       <form onSubmit={addSource} className="mt-3 grid gap-2" data-testid="source-form">
@@ -1069,10 +1070,10 @@ function Crawls() {
   const { data, error, reload } = useData<{ runs: Record<string, string | number>[] }>("/api/admin/crawl-runs");
   const notify = useNotify();
   if (error) return <Banner tone="error">{error}</Banner>;
-  const typeLabel = (type: string) => type === "manual" ? "手动抓取" : type === "initial" ? "首次批量" : type;
+  const typeLabel = (type: string) => type === "manual" ? "手动抓取" : type === "initial" ? "首次批量" : type === "monthly" ? "每月定时" : type;
   return (
     <div className="space-y-4" data-testid="crawl-runs">
-      <PageHeader kicker="政策" title="抓取记录" description="每次手动或定时抓取都会留下一条记录。" />
+      <PageHeader kicker="政策" title="抓取记录" description="手动抓取和每月 1 日 02:00 的自动抓取会留下记录。每天 02:00 只做超时收尾和到期清理，不抓来源。" />
       <Button type="button" variant="outline" data-testid="crawl-refresh" onClick={() => { reload(); notify("已刷新抓取记录"); }}>刷新</Button>
       {data && data.runs.length === 0 ? <EmptyState title="还没有运行记录">从来源页发起首次批量抓取后，结果会出现在这里。</EmptyState> : (
         <div className="overflow-x-auto rounded-[18px] border border-line bg-white shadow-[0_10px_32px_#1d46800a]">

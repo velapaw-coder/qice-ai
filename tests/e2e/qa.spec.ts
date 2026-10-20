@@ -354,6 +354,7 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
     await expect(adminPage.getByTestId("disable-QA_PASTE_RULE")).toBeVisible();
 
     await adminPage.goto("/admin/policy-sources");
+    await expect(adminPage.getByText("每月 1 日 02:00 自动抓取")).toBeVisible();
     const toggle = adminPage.locator("[data-testid^='source-toggle-']").first();
     await expect(toggle).toHaveText("启用");
     await toggle.click();
