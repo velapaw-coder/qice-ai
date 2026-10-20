@@ -72,7 +72,7 @@ npx wrangler d1 migrations apply qice-ai --remote
 PEPPER='线上的同一串' node scripts/create-admin.mjs --phone 13800000000 --password '请换成强密码' --name 管理员 --role admin --remote
 ```
 
-5. 确认后再发布。线上域名是 `qice.chang2.ccwu.cc`（自定义域名）。这个账号的 `workers.dev` 打不开，不要靠它访问。应用只接受与当前请求相同的来源，Cookie 不设置 Domain，代码里没有写死 `workers.dev` 或 localhost。
+5. 确认后再发布。线上域名是 `qice.chang2.ccwu.cc`（自定义域名）。这个账号的 `workers.dev` 打不开，不要靠它访问。应用只接受与当前请求相同的来源，Cookie 不设置 Domain，代码里没有写死 `workers.dev` 或 localhost。规范链接使用 `https://goqice.com`（canonical、Open Graph、sitemap）。旧域名不跳转，也不要改 DNS。
 
 ```bash
 npx wrangler deploy
