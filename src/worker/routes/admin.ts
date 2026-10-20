@@ -668,21 +668,22 @@ adminRoutes.get("/admin/users", async (c) => {
 
 adminRoutes.post("/admin/users", async (c) => {
   if (!adminOnly(c.get("role"))) return c.json({ error: "只有管理员可以创建账号" }, 403);
-  const body = await readJson<{ phone?: string; name?: string; role?: string; client_key?: string }>(c.req.raw);
+  const body = await readJson<{ phone?: string; name?: string; role?: string; client_key?: string; must_change_password?: boolean }>(c.req.raw);
   if (body?.phone) body.phone = body.phone.trim();
   if (!body?.phone || !/^1\d{10}$/.test(body.phone)) return c.json({ error: "手机号不正确" }, 400);
-  if (!body.client_key || !/^[0-9a-f]{64}$/.test(body.client_key)) return c.json({ error: "临时密码格式不正确" }, 400);
+  if (!body.client_key || !/^[0-9a-f]{64}$/.test(body.client_key)) return c.json({ error: "密码格式不正确" }, 400);
   if (body.role !== "consultant" && body.role !== "admin") return c.json({ error: "角色只能是顾问或管理员" }, 400);
   const saltBytes = crypto.getRandomValues(new Uint8Array(16));
   const salt = [...saltBytes].map((b) => b.toString(16).padStart(2, "0")).join("");
   const { serverPasswordHash } = await import("../../shared/password");
   const hash = await serverPasswordHash(c.env.PEPPER, body.client_key, salt);
   const id = uid();
+  const mustChange = body.must_change_password === false ? 0 : 1;
   try {
     await c.env.DB.prepare(
-      "INSERT INTO users (id, phone, password_hash, salt, role, name, status, must_change_password, failed_logins, created_at) VALUES (?, ?, ?, ?, ?, ?, 'active', 1, 0, ?)",
+      "INSERT INTO users (id, phone, password_hash, salt, role, name, status, must_change_password, failed_logins, created_at) VALUES (?, ?, ?, ?, ?, ?, 'active', ?, 0, ?)",
     )
-      .bind(id, body.phone.trim(), hash, salt, body.role, (body.name || "").trim(), nowIso())
+      .bind(id, body.phone.trim(), hash, salt, body.role, (body.name || "").trim(), mustChange, nowIso())
       .run();
   } catch (err) {
     if (String(err).toLowerCase().includes("unique")) return c.json({ error: "这个手机号已经注册" }, 409);
@@ -693,8 +694,8 @@ adminRoutes.post("/admin/users", async (c) => {
 });
 
 adminRoutes.post("/admin/users/:id/reset-password", async (c) => {
-  const body = await readJson<{ client_key?: string }>(c.req.raw);
-  if (!body?.client_key || !/^[0-9a-f]{64}$/.test(body.client_key)) return c.json({ error: "临时密码格式不正确" }, 400);
+  const body = await readJson<{ client_key?: string; must_change_password?: boolean }>(c.req.raw);
+  if (!body?.client_key || !/^[0-9a-f]{64}$/.test(body.client_key)) return c.json({ error: "密码格式不正确" }, 400);
   const target = await c.env.DB.prepare("SELECT id, role FROM users WHERE id = ?").bind(c.req.param("id")).first<{ id: string; role: string }>();
   if (!target) return c.json({ error: "账号不存在" }, 404);
   if (c.get("role") !== "admin" && target.role !== "enterprise") return c.json({ error: "顾问只能重置企业账号" }, 403);
@@ -702,8 +703,9 @@ adminRoutes.post("/admin/users/:id/reset-password", async (c) => {
   const salt = [...saltBytes].map((b) => b.toString(16).padStart(2, "0")).join("");
   const { serverPasswordHash } = await import("../../shared/password");
   const hash = await serverPasswordHash(c.env.PEPPER, body.client_key, salt);
-  await c.env.DB.prepare("UPDATE users SET password_hash = ?, salt = ?, must_change_password = 1, failed_logins = 0, locked_until = NULL WHERE id = ?")
-    .bind(hash, salt, target.id)
+  const mustChange = body.must_change_password === false ? 0 : 1;
+  await c.env.DB.prepare("UPDATE users SET password_hash = ?, salt = ?, must_change_password = ?, failed_logins = 0, locked_until = NULL WHERE id = ?")
+    .bind(hash, salt, mustChange, target.id)
     .run();
   await audit(c.env.DB, c.get("userId"), "user.reset_password", "user", target.id, clientIp(c.req.raw));
   return c.json({ ok: true });

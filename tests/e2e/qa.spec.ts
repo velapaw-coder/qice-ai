@@ -162,6 +162,7 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
     await consultantPage.getByTestId("change-phone").fill("13900000002");
     await consultantPage.getByTestId("change-old").fill(createdPassword);
     await consultantPage.getByTestId("change-new").fill("Consult2234");
+    await consultantPage.getByTestId("change-confirm").fill("Consult2234");
     await consultantPage.getByRole("button", { name: "保存新密码" }).click();
     await expect(consultantPage.getByTestId("admin-home")).toBeVisible();
 
@@ -354,6 +355,7 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
     await expect(adminPage.getByTestId("disable-QA_PASTE_RULE")).toBeVisible();
 
     await adminPage.goto("/admin/policy-sources");
+    await expect(adminPage.getByText("每月 1 日 02:00 自动抓取")).toBeVisible();
     const toggle = adminPage.locator("[data-testid^='source-toggle-']").first();
     await expect(toggle).toHaveText("启用");
     await toggle.click();
@@ -381,6 +383,7 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
 
     await adminPage.goto("/admin/users");
     await adminPage.getByTestId("reset-13900000002").click();
+    await adminPage.getByTestId("reset-generate").click();
     const resetPassword = await tempPassword(adminPage);
     const resetCtx = await browser.newContext();
     contexts.push(resetCtx);
@@ -390,10 +393,54 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
     await resetPage.getByTestId("change-phone").fill("13900000002");
     await resetPage.getByTestId("change-old").fill(resetPassword);
     await resetPage.getByTestId("change-new").fill("Consult3234");
+    await resetPage.getByTestId("change-confirm").fill("Consult3234");
     await resetPage.getByRole("button", { name: "保存新密码" }).click();
     await expect(resetPage.getByTestId("admin-home")).toBeVisible();
     await resetPage.getByTestId("admin-logout").click();
     await expect(resetPage.getByTestId("login-phone")).toBeVisible();
+
+    await adminPage.goto("/admin/users");
+    await adminPage.getByTestId("user-name").fill("自定义顾问");
+    await adminPage.getByTestId("user-phone").fill("13900000031");
+    await adminPage.getByTestId("user-role").selectOption("consultant");
+    await adminPage.getByTestId("user-password").fill("Custom1234");
+    await adminPage.getByTestId("user-password-toggle").click();
+    await expect(adminPage.getByTestId("user-password")).toHaveAttribute("type", "text");
+    await expect(adminPage.getByTestId("user-password")).toHaveValue("Custom1234");
+    await adminPage.getByTestId("user-password-confirm").fill("Custom1234");
+    await expect(adminPage.getByTestId("user-must-change")).not.toBeChecked();
+    await adminPage.getByTestId("create-user-custom").click();
+    await expect(adminPage.getByTestId("temp-password")).toContainText("直接登录");
+    const customCtx = await browser.newContext();
+    contexts.push(customCtx);
+    const customPage = await customCtx.newPage();
+    await login(customPage, "13900000031", "Custom1234");
+    await expect(customPage.getByTestId("admin-home")).toBeVisible();
+    await expect(customPage.getByTestId("change-password")).toHaveCount(0);
+    await customPage.goto("/admin/password");
+    await expect(customPage.getByTestId("self-password")).toBeVisible();
+    await customPage.getByTestId("self-old").fill("Wrong1234");
+    await customPage.getByTestId("self-new").fill("Custom2234");
+    await customPage.getByTestId("self-confirm").fill("Custom2234");
+    await customPage.getByTestId("self-save").click();
+    await expect(customPage.getByTestId("password-error")).toContainText("当前密码不正确");
+    await customPage.getByTestId("self-old").fill("Custom1234");
+    await customPage.getByTestId("self-save").click();
+    await expect(customPage.getByTestId("admin-home")).toBeVisible();
+    await customPage.getByTestId("admin-logout").click();
+    await customPage.getByTestId("login-phone").fill("13900000031");
+    await customPage.getByTestId("login-password").fill("Custom1234");
+    await customPage.getByTestId("login-submit").click();
+    await expect(customPage.getByText("手机号或密码不正确")).toBeVisible();
+    await adminPage.getByTestId("reset-13900000031").click();
+    await adminPage.getByTestId("reset-password").fill("Reset1234");
+    await adminPage.getByTestId("reset-password-confirm").fill("Reset1234");
+    await expect(adminPage.getByTestId("reset-must-change")).not.toBeChecked();
+    await adminPage.getByTestId("reset-custom").click();
+    await expect(adminPage.getByTestId("temp-password")).toContainText("直接登录");
+    await login(customPage, "13900000031", "Reset1234");
+    await expect(customPage.getByTestId("admin-home")).toBeVisible();
+    await expect(customPage.getByTestId("change-password")).toHaveCount(0);
 
     await adminPage.goto("/admin/audit");
     const audit = adminPage.getByTestId("audit-log");
@@ -452,16 +499,22 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
     await expect(photoPage.getByTestId("file-progress")).toContainText("识别完成", { timeout: 30_000 });
 
     await smallPage.goto("/app/settings");
-    await smallPage.getByTestId("change-password-link").click();
-    await expect(smallPage.getByTestId("change-password")).toBeVisible();
-    await smallPage.getByTestId("change-phone").fill("13700000003");
-    await smallPage.getByTestId("change-old").fill("Small1234");
-    await smallPage.getByTestId("change-new").fill("Small2234");
-    await smallPage.getByRole("button", { name: "保存新密码" }).click();
+    await expect(smallPage.getByTestId("self-password")).toBeVisible();
+    await smallPage.getByTestId("self-old").fill("Wrong1234");
+    await smallPage.getByTestId("self-new").fill("Small2234");
+    await smallPage.getByTestId("self-confirm").fill("Small2234");
+    await smallPage.getByTestId("self-save").click();
+    await expect(smallPage.getByTestId("password-error")).toContainText("当前密码不正确");
+    await smallPage.getByTestId("self-old").fill("Small1234");
+    await smallPage.getByTestId("self-save").click();
     await expect(smallPage.getByTestId("status-title")).toBeVisible();
     await smallPage.goto("/app/settings");
     await smallPage.getByTestId("logout").click();
     await expect(smallPage.getByTestId("login-phone")).toBeVisible();
+    await smallPage.getByTestId("login-phone").fill("13700000003");
+    await smallPage.getByTestId("login-password").fill("Small1234");
+    await smallPage.getByTestId("login-submit").click();
+    await expect(smallPage.getByText("手机号或密码不正确")).toBeVisible();
     await login(smallPage, "13700000003", "Small2234");
     await expect(smallPage.getByTestId("status-title")).toHaveText("已发布");
 

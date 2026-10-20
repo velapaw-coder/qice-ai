@@ -144,7 +144,9 @@ export function ChangePasswordPage({ next }: { next: string }) {
     const phone = String(form.get("phone") || "").trim();
     const oldPassword = String(form.get("old") || "");
     const password = String(form.get("password") || "");
+    const confirm = String(form.get("confirm") || "");
     if (phoneError(phone) || passwordError(password)) return setError(phoneError(phone) || passwordError(password) || "请检查密码");
+    if (password !== confirm) return setError("两次输入的密码不一致");
     setBusy(true);
     try {
       const old_client_key = await deriveClientKey(phone, oldPassword);
@@ -164,10 +166,60 @@ export function ChangePasswordPage({ next }: { next: string }) {
       <Input name="old" type="password" required data-testid="change-old" />
       <Label>新密码</Label>
       <Input name="password" type="password" required data-testid="change-new" />
+      <Label>确认新密码</Label>
+      <Input name="confirm" type="password" required data-testid="change-confirm" />
       {error ? <Banner tone="error">{error}</Banner> : null}
       <Button type="submit" className="w-full" disabled={busy}>保存新密码</Button>
     </form>
   );
   if (next.startsWith("/admin") || next.startsWith("/app")) return <Card><h1 className="mb-3 text-xl font-extrabold text-navy">修改密码</h1>{form}</Card>;
   return <Shell title="修改密码">{form}</Shell>;
+}
+
+export function SelfPasswordForm({ next }: { next: string }) {
+  const [phone, setPhone] = useState("");
+  const [oldPassword, setOldPassword] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [showNew, setShowNew] = useState(false);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api<{ user: { phone: string } }>("/api/me").then((res) => setPhone(res.user.phone || "")).catch(() => setError("没有读到当前账号"));
+  }, []);
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!phone) return setError("账号还在读取，请稍后再保存");
+    if (!oldPassword) return setError("请填写当前密码");
+    const problem = passwordError(password);
+    if (problem) return setError(problem);
+    if (password !== confirm) return setError("两次输入的密码不一致");
+    setBusy(true);
+    setError("");
+    try {
+      const old_client_key = await deriveClientKey(phone, oldPassword);
+      const new_client_key = await deriveClientKey(phone, password);
+      await api("/api/auth/change-password", { method: "POST", body: JSON.stringify({ old_client_key, new_client_key }) });
+      window.location.assign(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "修改失败");
+      setBusy(false);
+    }
+  }
+  return (
+    <form noValidate onSubmit={onSubmit} className="space-y-3" data-testid="self-password">
+      <p className="text-sm text-muted">当前账号 {phone || "读取中"}。密码在浏览器里加密后再提交。</p>
+      <Label>当前密码</Label>
+      <Input type="password" required value={oldPassword} onChange={(e) => setOldPassword(e.target.value)} autoComplete="current-password" data-testid="self-old" />
+      <Label>新密码</Label>
+      <div className="flex gap-2">
+        <Input key={showNew ? "self-new-shown" : "self-new-hidden"} className="min-w-0 flex-1" type={showNew ? "text" : "password"} required value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" data-testid="self-new" />
+        <Button type="button" variant="outline" data-testid="self-new-toggle" onClick={() => setShowNew((value) => !value)}>{showNew ? "隐藏" : "显示"}</Button>
+      </div>
+      <Label>确认新密码</Label>
+      <Input type="password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" data-testid="self-confirm" />
+      {error ? <Banner tone="error"><span data-testid="password-error">{error}</span></Banner> : null}
+      <Button type="submit" disabled={busy} data-testid="self-save">{busy ? "正在保存…" : "保存新密码"}</Button>
+    </form>
+  );
 }

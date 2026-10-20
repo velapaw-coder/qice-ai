@@ -5,7 +5,7 @@ import { api, putFile } from "../lib/api";
 import { compressImage, extractionFromPdfText, maybeConvertHeic, parseSpreadsheet, readPdf, textExtractionUseful } from "../lib/files";
 import { recognizePages } from "../lib/vision";
 import { Banner, BrandMark, Button, Card, Input, Label, PageHeader, Textarea, TierBadge } from "../components/ui";
-import { ChangePasswordPage } from "./AuthPages";
+import { ChangePasswordPage, SelfPasswordForm } from "./AuthPages";
 
 interface Me {
   user: { role: string; must_change_password: boolean; phone: string; name: string };
@@ -417,8 +417,12 @@ function SettingsPage() {
     <div className="space-y-4">
       <PageHeader kicker="账号" title="设置" description="修改密码、撤回授权，或申请删除已上传的资料。" />
       <Card>
+        <h2 className="font-semibold text-navy">修改密码</h2>
+        <div className="mt-3">
+          <SelfPasswordForm next="/app" />
+        </div>
         <div className="mt-4 flex flex-col gap-2">
-          <Button asChild variant="outline" data-testid="change-password-link"><Link to="/app/change-password">修改密码</Link></Button>
+          <Button asChild variant="outline" data-testid="change-password-link"><Link to="/app/change-password">在单独页面修改密码</Link></Button>
           <Button variant="danger" onClick={revoke} data-testid="revoke">撤回授权</Button>
           <Button variant="danger" onClick={remove}>申请删除资料</Button>
           <Button variant="ghost" onClick={logout} data-testid="logout">退出登录</Button>

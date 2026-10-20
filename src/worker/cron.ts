@@ -1,3 +1,4 @@
+import { cronEnqueuesCrawl } from "../shared/schedule";
 import { encryptSecret } from "./crypto";
 import { closeStaleCrawlRuns, enqueueCrawl } from "./crawl";
 import { nowIso, uid, type Env } from "./util";
@@ -12,10 +13,9 @@ async function runCron(cron: string, env: Env): Promise<void> {
   await expirePolicies(env);
   await deleteExpiredFiles(env);
   await purgeWithdrawn(env);
-  if (cron === "0 18 1 * *") {
-    await enqueueCrawl(env, "monthly", null);
-    console.log(JSON.stringify({ level: "info", msg: "monthly_crawl_enqueued" }));
-  }
+  if (!cronEnqueuesCrawl(cron)) return;
+  await enqueueCrawl(env, "monthly", null);
+  console.log(JSON.stringify({ level: "info", msg: "monthly_crawl_enqueued", cron }));
 }
 
 async function ensureDeepseek(env: Env): Promise<void> {

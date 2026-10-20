@@ -4,12 +4,13 @@ import { zipSync } from "fflate";
 import { MODEL_SLOT_KEYS } from "@shared/modelSlots";
 import { adoptBlockedReason } from "@shared/policyDraft";
 import { formatShanghai } from "@shared/policyPage";
-import { deriveClientKey } from "@shared/password";
+import { SOURCE_SCHEDULE_TEXT } from "@shared/schedule";
+import { deriveClientKey, passwordError } from "@shared/password";
 import { formatPublicBand, parseBands, validateBands, type EstimateBand } from "@shared/bands";
 import { formatRange } from "@shared/rules/evaluate";
 import { api } from "../lib/api";
 import { Banner, BrandMark, Button, Card, EmptyState, Input, Label, PageHeader, StatCard, Textarea, TierBadge } from "../components/ui";
-import { ChangePasswordPage } from "./AuthPages";
+import { ChangePasswordPage, SelfPasswordForm } from "./AuthPages";
 
 const filterSelect = "min-w-[9.5rem] shrink-0 rounded-[11px] border border-[#d8e1ef] bg-white px-3 py-2.5 text-[15px] leading-6 text-ink";
 
@@ -33,6 +34,7 @@ const groups = [
     { to: "/admin/users", label: "账号", icon: "○" },
     { to: "/admin/audit", label: "审计", icon: "✓" },
     { to: "/admin/settings", label: "设置", icon: "⚙" },
+    { to: "/admin/password", label: "修改密码", icon: "✱" },
   ]},
 ];
 
@@ -155,6 +157,7 @@ export function AdminApp() {
           <Route path="users" element={<Users />} />
           <Route path="audit" element={<Audit />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="password" element={<MyPassword />} />
           <Route path="change-password" element={<ChangePasswordPage next="/admin" />} />
         </Routes>
         </FeedbackContext.Provider>
@@ -997,7 +1000,7 @@ function Sources() {
   }
   return (
     <div className="space-y-4" data-testid="policy-sources">
-    <PageHeader kicker="政策" title="抓取来源" description="默认停用。上线前逐个试抓，确认能访问再启用。自动抓取失败不影响企业方案。" />
+    <PageHeader kicker="政策" title="抓取来源" description={`默认停用。上线前逐个试抓，确认能访问再启用。${SOURCE_SCHEDULE_TEXT}已启用来源。抓取失败不影响企业方案。`} />
     <Card>
       <h2 className="font-semibold text-navy">添加来源</h2>
       <form onSubmit={addSource} className="mt-3 grid gap-2" data-testid="source-form">
@@ -1069,10 +1072,10 @@ function Crawls() {
   const { data, error, reload } = useData<{ runs: Record<string, string | number>[] }>("/api/admin/crawl-runs");
   const notify = useNotify();
   if (error) return <Banner tone="error">{error}</Banner>;
-  const typeLabel = (type: string) => type === "manual" ? "手动抓取" : type === "initial" ? "首次批量" : type;
+  const typeLabel = (type: string) => type === "manual" ? "手动抓取" : type === "initial" ? "首次批量" : type === "monthly" ? "每月定时" : type;
   return (
     <div className="space-y-4" data-testid="crawl-runs">
-      <PageHeader kicker="政策" title="抓取记录" description="每次手动或定时抓取都会留下一条记录。" />
+      <PageHeader kicker="政策" title="抓取记录" description="手动抓取和每月 1 日 02:00 的自动抓取会留下记录。每天 02:00 只做超时收尾和到期清理，不抓来源。" />
       <Button type="button" variant="outline" data-testid="crawl-refresh" onClick={() => { reload(); notify("已刷新抓取记录"); }}>刷新</Button>
       {data && data.runs.length === 0 ? <EmptyState title="还没有运行记录">从来源页发起首次批量抓取后，结果会出现在这里。</EmptyState> : (
         <div className="overflow-x-auto rounded-[18px] border border-line bg-white shadow-[0_10px_32px_#1d46800a]">
@@ -1230,6 +1233,26 @@ function AiSettingsBody() {
   );
 }
 
+function MyPassword() {
+  return (
+    <div className="space-y-4">
+      <PageHeader kicker="账号" title="修改密码" description="填写当前密码和新密码。顾问和管理员都在这里改自己的密码。" />
+      <Card>
+        <SelfPasswordForm next="/admin" />
+      </Card>
+    </div>
+  );
+}
+
+function SecretInput({ value, onChange, shown, onToggle, testId, toggleTestId, autoComplete }: { value: string; onChange: (value: string) => void; shown: boolean; onToggle: () => void; testId: string; toggleTestId: string; autoComplete: string }) {
+  return (
+    <div className="flex gap-2">
+      <Input key={shown ? `${testId}-shown` : `${testId}-hidden`} className="min-w-0 flex-1" type={shown ? "text" : "password"} value={value} onChange={(e) => onChange(e.target.value)} autoComplete={autoComplete} data-testid={testId} />
+      <Button type="button" variant="outline" data-testid={toggleTestId} onClick={onToggle}>{shown ? "隐藏" : "显示"}</Button>
+    </div>
+  );
+}
+
 function Users() {
   const admin = useIsAdmin();
   if (!admin) return <AdminOnlyPage title="账号" />;
@@ -1240,64 +1263,158 @@ function UsersBody() {
   const { data, error, reload } = useData<{ users: { id: string; phone: string; name: string; role: string }[] }>("/api/admin/users");
   const notify = useNotify();
   const [temp, setTemp] = useState("");
+  const [pending, setPending] = useState("");
   const [formError, setFormError] = useState("");
   const [busy, setBusy] = useState(false);
-  const report = (value: string) => setTemp(value);
-  async function reset(user: { id: string; phone: string }) {
-    setFormError("");
-    setBusy(true);
-    report(`正在为 ${user.phone} 重置密码…`);
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 30));
-      const password = `Rst${Math.random().toString(36).slice(2, 8)}9A`;
-      const client_key = await deriveClientKey(user.phone, password);
-      await api(`/api/admin/users/${user.id}/reset-password`, { method: "POST", body: JSON.stringify({ client_key }) });
-      report(`${user.phone} 的临时密码：${password}。对方下次登录必须修改。`);
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : "重置失败");
-    } finally {
-      setBusy(false);
-    }
+  const [customPassword, setCustomPassword] = useState("");
+  const [customConfirm, setCustomConfirm] = useState("");
+  const [showCustom, setShowCustom] = useState(false);
+  const [showCustomConfirm, setShowCustomConfirm] = useState(false);
+  const [forceCreate, setForceCreate] = useState(false);
+  const [resetUser, setResetUser] = useState<{ id: string; phone: string } | null>(null);
+  const [resetPassword, setResetPassword] = useState("");
+  const [resetConfirm, setResetConfirm] = useState("");
+  const [showReset, setShowReset] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [forceReset, setForceReset] = useState(false);
+  const report = (value: string) => {
+    setPending("");
+    setTemp(value);
+  };
+  const notice = (value: string) => {
+    setTemp("");
+    setPending(value);
+  };
+  function accountFields() {
+    const form = document.querySelector<HTMLFormElement>("[data-testid='create-user']");
+    const data = form ? new FormData(form) : new FormData();
+    return {
+      phone: String(data.get("phone") || "").replace(/\s/g, ""),
+      name: String(data.get("name") || "").trim(),
+      role: String(data.get("role") || ""),
+    };
   }
-  async function create(e: FormEvent<HTMLFormElement>) {
+  async function createGenerated(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const form = new FormData(e.currentTarget);
-    const phone = String(form.get("phone") || "").replace(/\s/g, "");
-    const name = String(form.get("name") || "").trim();
-    const role = String(form.get("role") || "");
+    const { phone, name, role } = accountFields();
     if (!/^1\d{10}$/.test(phone)) {
       setFormError("手机号不正确");
       return;
     }
     setFormError("");
     setBusy(true);
+    notice(`正在为 ${phone} 生成临时密码…`);
     try {
       await new Promise((resolve) => setTimeout(resolve, 30));
       const password = `Tmp${Math.random().toString(36).slice(2, 8)}9A`;
       const client_key = await deriveClientKey(phone, password);
-      await api("/api/admin/users", { method: "POST", body: JSON.stringify({ phone, name, role, client_key }) });
+      await api("/api/admin/users", { method: "POST", body: JSON.stringify({ phone, name, role, client_key, must_change_password: true }) });
       report(`${phone} 的临时密码：${password}。请电话告知，对方首次登录必须修改。`);
       reload();
     } catch (err) {
-      const message = err instanceof Error ? err.message : "创建失败";
-      setFormError(message);
+      setPending("");
+      setFormError(err instanceof Error ? err.message : "创建失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function createCustom() {
+    const { phone, name, role } = accountFields();
+    if (!name || !/^1\d{10}$/.test(phone)) {
+      setFormError("请先填写姓名和 11 位手机号");
+      return;
+    }
+    const problem = passwordError(customPassword) || (customPassword !== customConfirm ? "两次输入的密码不一致" : null);
+    if (problem) {
+      setFormError(problem);
+      return;
+    }
+    setFormError("");
+    setBusy(true);
+    notice(`正在为 ${phone} 保存自定义密码…`);
+    try {
+      const client_key = await deriveClientKey(phone, customPassword);
+      await api("/api/admin/users", { method: "POST", body: JSON.stringify({ phone, name, role, client_key, must_change_password: forceCreate }) });
+      report(forceCreate ? `已为 ${phone} 设置密码。对方下次登录必须修改。` : `已为 ${phone} 设置密码。对方可以用这个密码直接登录。`);
+      setCustomPassword("");
+      setCustomConfirm("");
+      reload();
+    } catch (err) {
+      setPending("");
+      setFormError(err instanceof Error ? err.message : "创建失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function generateReset() {
+    if (!resetUser) {
+      setFormError("请先选择要重置的账号");
+      return;
+    }
+    setFormError("");
+    setBusy(true);
+    notice(`正在为 ${resetUser.phone} 生成临时密码…`);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      const password = `Rst${Math.random().toString(36).slice(2, 8)}9A`;
+      const client_key = await deriveClientKey(resetUser.phone, password);
+      await api(`/api/admin/users/${resetUser.id}/reset-password`, { method: "POST", body: JSON.stringify({ client_key, must_change_password: true }) });
+      report(`${resetUser.phone} 的临时密码：${password}。对方下次登录必须修改。`);
+    } catch (err) {
+      setPending("");
+      setFormError(err instanceof Error ? err.message : "重置失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function saveCustomReset() {
+    if (!resetUser) {
+      setFormError("请先选择要重置的账号");
+      return;
+    }
+    const problem = passwordError(resetPassword) || (resetPassword !== resetConfirm ? "两次输入的密码不一致" : null);
+    if (problem) {
+      setFormError(problem);
+      return;
+    }
+    setFormError("");
+    setBusy(true);
+    notice(`正在为 ${resetUser.phone} 保存自定义密码…`);
+    try {
+      const client_key = await deriveClientKey(resetUser.phone, resetPassword);
+      await api(`/api/admin/users/${resetUser.id}/reset-password`, { method: "POST", body: JSON.stringify({ client_key, must_change_password: forceReset }) });
+      report(forceReset ? `已把 ${resetUser.phone} 的密码改成你填写的密码。对方下次登录必须修改。` : `已把 ${resetUser.phone} 的密码改成你填写的密码。对方可以直接登录。`);
+      setResetPassword("");
+      setResetConfirm("");
+    } catch (err) {
+      setPending("");
+      setFormError(err instanceof Error ? err.message : "重置失败");
     } finally {
       setBusy(false);
     }
   }
   return (
     <div className="space-y-4">
-      <PageHeader kicker="系统" title="账号" description="生成临时密码后电话告知。对方首次登录必须修改密码。" />
+      <PageHeader kicker="系统" title="账号" description="可以生成临时密码，也可以直接设置密码。自定义密码默认下次登录不用修改。" />
       <div className="grid gap-4 lg:grid-cols-2">
       <Card>
         <h2 className="font-semibold text-navy">新建顾问</h2>
-        <form onSubmit={create} className="mt-3 space-y-2" data-testid="create-user">
+        <form onSubmit={createGenerated} className="mt-3 space-y-2" data-testid="create-user">
           <Input name="name" required placeholder="姓名" data-testid="user-name" />
           <Input name="phone" required placeholder="手机号" data-testid="user-phone" />
           <select name="role" className="w-full rounded-xl border border-line px-3 py-2" data-testid="user-role"><option value="consultant">顾问</option><option value="admin">管理员</option></select>
-          <Button type="submit" disabled={busy} data-testid="create-user-submit" onClick={(e) => invalidHint(e, notify, "新建账号")}>{busy ? "正在生成临时密码…" : "生成临时密码并创建"}</Button>
+          <Label>自定义密码</Label>
+          <SecretInput value={customPassword} onChange={setCustomPassword} shown={showCustom} onToggle={() => setShowCustom((value) => !value)} testId="user-password" toggleTestId="user-password-toggle" autoComplete="new-password" />
+          <Label>确认密码</Label>
+          <SecretInput value={customConfirm} onChange={setCustomConfirm} shown={showCustomConfirm} onToggle={() => setShowCustomConfirm((value) => !value)} testId="user-password-confirm" toggleTestId="user-password-confirm-toggle" autoComplete="new-password" />
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={forceCreate} onChange={(e) => setForceCreate(e.target.checked)} data-testid="user-must-change" />下次登录要求修改</label>
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" disabled={busy} data-testid="create-user-submit" onClick={(e) => invalidHint(e, notify, "新建账号")}>{busy ? "正在处理…" : "生成临时密码并创建"}</Button>
+            <Button type="button" variant="outline" disabled={busy} data-testid="create-user-custom" onClick={createCustom}>用自定义密码创建</Button>
+          </div>
         </form>
         {formError ? <Banner tone="error">{formError}</Banner> : null}
+        {pending ? <p className="mt-3 text-sm text-muted">{pending}</p> : null}
         {temp ? <p className="mt-3 text-sm" data-testid="temp-password">{temp}</p> : null}
       </Card>
       <Card>
@@ -1305,9 +1422,23 @@ function UsersBody() {
         {(data?.users || []).length === 0 ? <EmptyState title="还没有账号" /> : (
           <table className="app-table">
             <thead><tr><th>姓名</th><th>手机号</th><th>角色</th><th></th></tr></thead>
-            <tbody>{(data?.users || []).map((user) => <tr key={user.id}><td>{user.name}</td><td>{user.phone}</td><td>{user.role}</td><td><button type="button" className="whitespace-nowrap text-sm font-semibold text-[#1e4fc8]" data-testid={`reset-${user.phone}`} disabled={busy} onClick={() => reset(user)}>重置密码</button></td></tr>)}</tbody>
+            <tbody>{(data?.users || []).map((user) => <tr key={user.id}><td>{user.name}</td><td>{user.phone}</td><td>{user.role}</td><td><button type="button" className="whitespace-nowrap text-sm font-semibold text-[#1e4fc8]" data-testid={`reset-${user.phone}`} disabled={busy} onClick={() => { setResetUser(user); setForceReset(false); setResetPassword(""); setResetConfirm(""); setFormError(""); notice(`正在为 ${user.phone} 设置密码`); }}>重置密码</button></td></tr>)}</tbody>
           </table>
         )}
+        {resetUser ? (
+          <div className="mt-4 space-y-2" data-testid="reset-form">
+            <h3 className="font-semibold">为 {resetUser.phone} 设置密码</h3>
+            <Label>自定义密码</Label>
+            <SecretInput value={resetPassword} onChange={setResetPassword} shown={showReset} onToggle={() => setShowReset((value) => !value)} testId="reset-password" toggleTestId="reset-password-toggle" autoComplete="new-password" />
+            <Label>确认密码</Label>
+            <SecretInput value={resetConfirm} onChange={setResetConfirm} shown={showResetConfirm} onToggle={() => setShowResetConfirm((value) => !value)} testId="reset-password-confirm" toggleTestId="reset-password-confirm-toggle" autoComplete="new-password" />
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={forceReset} onChange={(e) => setForceReset(e.target.checked)} data-testid="reset-must-change" />下次登录要求修改</label>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" disabled={busy} data-testid="reset-generate" onClick={generateReset}>生成临时密码</Button>
+              <Button type="button" disabled={busy} data-testid="reset-custom" onClick={saveCustomReset}>保存自定义密码</Button>
+            </div>
+          </div>
+        ) : null}
       </Card>
       </div>
     </div>

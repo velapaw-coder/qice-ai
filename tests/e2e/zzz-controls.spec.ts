@@ -71,6 +71,7 @@ async function restoreAdminPassword(page: Page, temporary: string) {
   await page.getByTestId("change-phone").fill("13800000000");
   await page.getByTestId("change-old").fill(temporary);
   await page.getByTestId("change-new").fill("Admin1234");
+  await page.getByTestId("change-confirm").fill("Admin1234");
   await page.getByRole("button", { name: "保存新密码" }).click();
   await expect(page.getByTestId("admin-home")).toBeVisible({ timeout: 60_000 });
 }
@@ -89,6 +90,7 @@ async function audit(page: Page) {
     const label = ((await locator.innerText().catch(() => "")) || testid).replace(/\s+/g, " ").trim().slice(0, 40);
     const kind = await clickControl(page, locator);
     if (testid === "reset-13800000000") {
+      await page.getByTestId("reset-generate").click();
       await expect(page.getByTestId("temp-password")).toContainText("临时密码：", { timeout: 60_000 });
       const temporary = (await page.getByTestId("temp-password").innerText()).match(/临时密码：([^。\s]+)/)?.[1];
       expect(temporary).toBeTruthy();
@@ -177,6 +179,7 @@ test("管理员、顾问和企业端每个可见按钮都有反馈", async ({ br
     await consultantPage.getByTestId("change-phone").fill("13900000021");
     await consultantPage.getByTestId("change-old").fill(password!);
     await consultantPage.getByTestId("change-new").fill("Consult2121");
+    await consultantPage.getByTestId("change-confirm").fill("Consult2121");
     await consultantPage.getByRole("button", { name: "保存新密码" }).click();
     await expect(consultantPage.getByTestId("admin-home")).toBeVisible();
     for (const route of adminRoutes) {

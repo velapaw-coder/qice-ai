@@ -27,7 +27,8 @@ async function login(page: Page, phone: string, password: string) {
 
 async function tempPassword(page: Page, phone: string) {
   const locator = page.getByTestId("temp-password");
-  await expect(locator).toContainText(phone, { timeout: 60_000 });
+  await expect(locator).toContainText("临时密码：", { timeout: 60_000 });
+  await expect(locator).toContainText(phone);
   const text = await locator.innerText();
   const password = text.match(/临时密码：([^。\s]+)/)?.[1];
   expect(password).toBeTruthy();
@@ -65,6 +66,7 @@ test("闭环：建账号、复核发布、管道、规则、抓取、模型和�
     await consultantPage.getByTestId("change-phone").fill("13900000011");
     await consultantPage.getByTestId("change-old").fill(consultantPassword);
     await consultantPage.getByTestId("change-new").fill("Consult1111");
+    await consultantPage.getByTestId("change-confirm").fill("Consult1111");
     await consultantPage.getByRole("button", { name: "保存新密码" }).click();
     await expect(consultantPage.getByTestId("admin-home")).toBeVisible();
     await expect(consultantPage.getByTestId("workspace-label")).toHaveText("顾问工作台");

@@ -211,6 +211,7 @@ test("页面文字在默认、悬停、焦点和禁用时都可读", async ({ pa
   await page.getByTestId("user-name").fill("对比顾问");
   await page.getByTestId("user-phone").fill("13900000003");
   await page.getByRole("button", { name: "生成临时密码并创建" }).click();
+  await expect(page.getByTestId("temp-password")).toContainText("临时密码：", { timeout: 60_000 });
   const temp = await page.getByTestId("temp-password").innerText();
   const password = temp.match(/临时密码：([^。\s]+)/)?.[1];
   expect(password).toBeTruthy();
