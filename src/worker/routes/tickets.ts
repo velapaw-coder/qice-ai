@@ -145,6 +145,11 @@ ticketRoutes.post("/tickets", async (c) => {
   )
     .bind(messageId, id, c.get("userId"), body!.content!.trim(), now)
     .run();
+  await c.env.DB.prepare(
+    "INSERT INTO ticket_reads (ticket_id, user_id, last_read_at) VALUES (?, ?, ?) ON CONFLICT(ticket_id, user_id) DO UPDATE SET last_read_at = excluded.last_read_at",
+  )
+    .bind(id, c.get("userId"), now)
+    .run();
   await audit(c.env.DB, c.get("userId"), "ticket.create", "ticket", id, clientIp(c.req.raw), { enterprise_id: ent.id });
   return c.json({ id, message_id: messageId });
 });
@@ -231,6 +236,11 @@ ticketRoutes.post("/tickets/:id/messages", async (c) => {
     .bind(messageId, loaded.ticket.id, c.get("userId"), c.get("role"), body!.content!.trim(), now)
     .run();
   await c.env.DB.prepare("UPDATE tickets SET status = ?, updated_at = ? WHERE id = ?").bind(nextStatus, now, loaded.ticket.id).run();
+  await c.env.DB.prepare(
+    "INSERT INTO ticket_reads (ticket_id, user_id, last_read_at) VALUES (?, ?, ?) ON CONFLICT(ticket_id, user_id) DO UPDATE SET last_read_at = excluded.last_read_at",
+  )
+    .bind(loaded.ticket.id, c.get("userId"), now)
+    .run();
   await audit(c.env.DB, c.get("userId"), "ticket.reply", "ticket", loaded.ticket.id, clientIp(c.req.raw));
   return c.json({ id: messageId, status: nextStatus });
 });
@@ -311,6 +321,7 @@ ticketRoutes.patch("/tickets/:id", async (c) => {
     await audit(c.env.DB, c.get("userId"), "ticket.status", "ticket", loaded.ticket.id, clientIp(c.req.raw), { status: body.status });
   }
   if (Object.prototype.hasOwnProperty.call(body, "assignee_id") && assignee !== loaded.ticket.assignee_id) {
+    if (assignee) await c.env.DB.prepare("DELETE FROM ticket_reads WHERE ticket_id = ? AND user_id = ?").bind(loaded.ticket.id, assignee).run();
     await audit(c.env.DB, c.get("userId"), "ticket.reassign", "ticket", loaded.ticket.id, clientIp(c.req.raw), { assignee_id: assignee });
   }
   return c.json({ ok: true, status, assignee_id: assignee });

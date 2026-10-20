@@ -49,11 +49,13 @@ describe("工单权限和附件", () => {
     expect(ticketFieldError("补贴材料", "内容", 4000)).toBeNull();
   });
 
-  it("对方的新消息才算未读", () => {
+  it("没有阅读记录算未读，打开之后只看有没有更新的消息", () => {
     expect(isUnread("2026-10-20T00:00:02.000Z", "staff", "enterprise", null)).toBe(true);
-    expect(isUnread("2026-10-20T00:00:02.000Z", "enterprise", "enterprise", null)).toBe(false);
+    expect(isUnread("2026-10-20T00:00:02.000Z", "consultant-b", "consultant-b", null)).toBe(true);
     expect(isUnread("2026-10-20T00:00:02.000Z", "staff", "enterprise", "2026-10-20T00:00:01.000Z")).toBe(true);
-    expect(isUnread("2026-10-20T00:00:02.000Z", "staff", "enterprise", "2026-10-20T00:00:03.000Z")).toBe(false);
+    expect(isUnread("2026-10-20T00:00:02.000Z", "staff", "enterprise", "2026-10-20T00:00:02.000Z")).toBe(false);
+    expect(isUnread("2026-10-20T00:00:02.000Z", "consultant-b", "consultant-b", "2026-10-20T00:00:03.000Z")).toBe(false);
+    expect(isUnread("", "staff", "enterprise", null)).toBe(false);
   });
 
   it("迁移只追加，审计动作用中文", () => {

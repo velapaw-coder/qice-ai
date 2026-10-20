@@ -81,9 +81,20 @@ export function EmptyState({ title, children }: { title: string; children?: Reac
   );
 }
 
-export function BrandMark({ light = false }: { light?: boolean }) {
+const logoFile = {
+  32: { webp: "/brand/logo-64.webp", png: "/brand/logo-64.png" },
+  36: { webp: "/brand/logo-72.webp", png: "/brand/logo-72.png" },
+  40: { webp: "/brand/logo-80.webp", png: "/brand/logo-80.png" },
+} as const;
+
+export function BrandMark({ size = 36 }: { size?: keyof typeof logoFile }) {
+  const file = logoFile[size];
+  const width = Math.round(size * 1.0685);
   return (
-    <span className={cn("grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-brand to-[#0f6f86] text-lg font-bold text-white shadow-[0_8px_18px_#3169f540]", light && "ring-1 ring-white/40")}>✦</span>
+    <picture>
+      <source srcSet={file.webp} type="image/webp" />
+      <img src={file.png} alt="" width={width} height={size} decoding="async" className="block shrink-0" style={{ height: size, width: "auto" }} />
+    </picture>
   );
 }
 

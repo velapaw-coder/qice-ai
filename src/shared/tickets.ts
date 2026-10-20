@@ -59,9 +59,9 @@ export function canReadTicket(access: TicketAccess): boolean {
   return access.assignedConsultantId === access.userId || access.assigneeId === access.userId;
 }
 
-/** 自己刚写的消息不算未读；没打开过、或最后阅读早于对方新消息，算未读。 */
-export function isUnread(lastMessageAt: string, lastAuthorId: string, readerId: string, lastReadAt: string | null): boolean {
-  if (!lastMessageAt || lastAuthorId === readerId) return false;
+/** 没有阅读记录算未读（转派会清掉新处理人的记录）。打开之后，只有更新的消息才算未读。 */
+export function isUnread(lastMessageAt: string, _lastAuthorId: string, _readerId: string, lastReadAt: string | null): boolean {
+  if (!lastMessageAt) return false;
   if (!lastReadAt) return true;
   return lastMessageAt > lastReadAt;
 }

@@ -269,8 +269,15 @@ export function TicketThread({ base }: { base: "/app" | "/admin" }) {
   );
 }
 
+const TICKET_FILTERS = [
+  { id: "", label: "全部", testId: "ticket-filter-all" },
+  { id: "待处理", label: "待处理", testId: "ticket-filter-open" },
+  { id: "处理中", label: "处理中", testId: "ticket-filter-progress" },
+  { id: "已解决", label: "已解决", testId: "ticket-filter-resolved" },
+] as const;
+
 export function StaffTicketList() {
-  const [filter, setFilter] = useState<"待处理" | "">("待处理");
+  const [filter, setFilter] = useState<(typeof TICKET_FILTERS)[number]["id"]>("待处理");
   const [tickets, setTickets] = useState<TicketSummary[] | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -281,10 +288,11 @@ export function StaffTicketList() {
     <div className="space-y-4">
       <PageHeader kicker="沟通" title="工单" description="顾问看到自己负责企业的工单。管理员看到全部，也可以转派。" />
       <div className="flex flex-wrap gap-2">
-        <Button type="button" variant={filter === "" ? "primary" : "outline"} data-testid="ticket-filter-all" onClick={() => setFilter("")}>全部</Button>
-        <Button type="button" variant={filter === "待处理" ? "primary" : "outline"} data-testid="ticket-filter-open" onClick={() => setFilter("待处理")}>待处理</Button>
+        {TICKET_FILTERS.map((item) => (
+          <Button key={item.testId} type="button" variant={filter === item.id ? "primary" : "outline"} data-testid={item.testId} onClick={() => setFilter(item.id)}>{item.label}</Button>
+        ))}
       </div>
-      <p data-testid="ticket-filter-label">{filter === "待处理" ? "待处理工单" : "全部工单"}</p>
+      <p data-testid="ticket-filter-label">{filter ? `${filter}工单` : "全部工单"}</p>
       {error ? <Banner tone="error">{error}</Banner> : null}
       {tickets && tickets.length === 0 ? <EmptyState title="没有待看的工单">企业提交后会出现在这里。</EmptyState> : null}
       {tickets && tickets.length > 0 ? (
@@ -315,12 +323,19 @@ export function StaffProfile() {
   const [msg, setMsg] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
+    let live = true;
     api<{ user: { contact_phone?: string; wechat_id?: string; has_qr?: boolean } }>("/api/me").then((res) => {
+      if (!live) return;
       setPhone(res.user.contact_phone || "");
       setWechat(res.user.wechat_id || "");
       setHasQr(Boolean(res.user.has_qr));
       setReady(true);
-    }).catch((err) => setMsg(err.message));
+    }).catch((err) => {
+      if (!live) return;
+      setMsg(err.message);
+      setReady(true);
+    });
+    return () => { live = false; };
   }, []);
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -363,17 +378,17 @@ export function StaffProfile() {
       <Card>
         <form noValidate onSubmit={save} className="space-y-3" data-testid="staff-contact">
           <Label>联系电话</Label>
-          <Input value={phone} onChange={(e) => setPhone(e.target.value)} data-testid="contact-phone" />
+          <Input value={phone} onChange={(e) => setPhone(e.target.value)} disabled={!ready} data-testid="contact-phone" />
           <Label>微信号</Label>
-          <Input value={wechat} onChange={(e) => setWechat(e.target.value)} data-testid="contact-wechat" />
-          <Button type="submit" data-testid="contact-save">保存联系方式</Button>
+          <Input value={wechat} onChange={(e) => setWechat(e.target.value)} disabled={!ready} data-testid="contact-wechat" />
+          <Button type="submit" disabled={!ready} data-testid="contact-save">保存联系方式</Button>
         </form>
         <div className="mt-4 space-y-2">
           <Label>微信二维码</Label>
-          <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" data-testid="contact-qr" />
+          <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" disabled={!ready} data-testid="contact-qr" />
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" data-testid="contact-qr-upload" onClick={uploadQr}>上传二维码</Button>
-            <Button type="button" variant="outline" disabled={!hasQr} data-testid="contact-qr-clear" onClick={clearQr}>删除二维码</Button>
+            <Button type="button" variant="outline" disabled={!ready} data-testid="contact-qr-upload" onClick={uploadQr}>上传二维码</Button>
+            <Button type="button" variant="outline" disabled={!ready || !hasQr} data-testid="contact-qr-clear" onClick={clearQr}>删除二维码</Button>
           </div>
           {hasQr ? <img className="h-28 w-28 rounded-lg border border-line object-cover" alt="我的微信二维码" src="/api/me/contact/qr" /> : null}
         </div>
