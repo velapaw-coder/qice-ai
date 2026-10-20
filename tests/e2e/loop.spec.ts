@@ -65,6 +65,7 @@ test("闭环：建账号、复核发布、管道、规则、抓取、模型和�
     await consultantPage.getByTestId("change-phone").fill("13900000011");
     await consultantPage.getByTestId("change-old").fill(consultantPassword);
     await consultantPage.getByTestId("change-new").fill("Consult1111");
+    await consultantPage.getByTestId("change-confirm").fill("Consult1111");
     await consultantPage.getByRole("button", { name: "保存新密码" }).click();
     await expect(consultantPage.getByTestId("admin-home")).toBeVisible();
     await expect(consultantPage.getByTestId("workspace-label")).toHaveText("顾问工作台");

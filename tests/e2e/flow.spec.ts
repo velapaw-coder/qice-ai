@@ -135,6 +135,7 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
   await consultantPage.getByTestId("change-phone").fill("13900000001");
   await consultantPage.getByTestId("change-old").fill(tempPassword!);
   await consultantPage.getByTestId("change-new").fill("Consult1234");
+  await consultantPage.getByTestId("change-confirm").fill("Consult1234");
   await consultantPage.getByRole("button", { name: "保存新密码" }).click();
   await expect(consultantPage.getByTestId("admin-home")).toBeVisible();
   await consultantPage.getByRole("link", { name: "深圳爱华国际教育科技有限公司" }).first().click();
