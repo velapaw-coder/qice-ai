@@ -73,6 +73,8 @@ export async function audit(
     .run();
 }
 
+export { cookieShouldBeSecure } from "./seo";
+
 export function cookie(token: string, secure: boolean, maxAge = SESSION_DAYS * 86400): string {
   const parts = [`${SESSION_COOKIE}=${token}`, "HttpOnly", "Path=/", "SameSite=Lax", `Max-Age=${maxAge}`];
   if (secure) parts.push("Secure");

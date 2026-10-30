@@ -6,10 +6,17 @@ import { enterpriseRoutes } from "./routes/enterprise";
 import { llmRoutes } from "./routes/llm";
 import { publicRoutes } from "./routes/public";
 import { ticketRoutes } from "./routes/tickets";
-import { decorateHtml, documentHeaders, pageKind, robotsTxt, sitemapXml, GOOGLE_VERIFY_BODY, GOOGLE_VERIFY_CONTENT_TYPE, GOOGLE_VERIFY_PATH, ROBOTS_CONTENT_TYPE, SITEMAP_CONTENT_TYPE } from "./seo";
+import { decorateHtml, documentHeaders, pageKind, redirectLocation, robotsTxt, sitemapXml, GOOGLE_VERIFY_BODY, GOOGLE_VERIFY_CONTENT_TYPE, GOOGLE_VERIFY_PATH, ROBOTS_CONTENT_TYPE, SITEMAP_CONTENT_TYPE } from "./seo";
 import { loadSession, type Env, type Role, type Vars } from "./util";
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
+
+app.use("*", async (c, next) => {
+  const url = new URL(c.req.url);
+  const location = redirectLocation(c.req.header("host"), url.hostname, url.pathname, url.search);
+  if (!location) return next();
+  return c.body(null, 301, { location, "cache-control": "public, max-age=3600" });
+});
 
 app.use("*", async (c, next) => {
   const path = c.req.path;
