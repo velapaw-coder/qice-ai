@@ -91,7 +91,11 @@ app.route("/api", ticketRoutes);
 app.route("/api", adminRoutes);
 app.route("/api", llmRoutes);
 
-app.notFound((c) => c.json({ error: "没有这个接口" }, 404));
+app.notFound((c) => {
+  if (c.req.path === "/api" || c.req.path.startsWith("/api/")) return c.json({ error: "没有这个接口" }, 404);
+  if (c.req.method !== "GET" && c.req.method !== "HEAD") return c.json({ error: "没有这个接口" }, 404);
+  return c.env.ASSETS.fetch(c.req.raw);
+});
 app.onError((err, c) => {
   console.log(JSON.stringify({ level: "error", message: err.message }));
   return c.json({ error: "服务器繁忙，请稍后再试" }, 500);

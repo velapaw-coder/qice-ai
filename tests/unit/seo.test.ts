@@ -143,11 +143,8 @@ describe("公开页 SEO", () => {
     expect(GOOGLE_VERIFY_CONTENT_TYPE.startsWith("text/html")).toBe(true);
   });
 
-  it("wrangler 让文档路由先进入 Worker，静态资源仍不经过 Worker", () => {
+  it("wrangler 让全部请求先进入 Worker，旧主机名才能在单页回退前跳转", () => {
     const raw = readFileSync("wrangler.jsonc", "utf8");
-    for (const route of ["/", "/robots.txt", "/sitemap.xml", "/googled5c7c4e254bd8e0c.html", "/login", "/register", "/legal/*", "/admin", "/admin/*", "/app", "/app/*", "/api/*"]) {
-      expect(raw).toContain(`"${route}"`);
-    }
-    expect(raw).not.toMatch(/"run_worker_first"\s*:\s*true/);
+    expect(raw).toMatch(/"run_worker_first"\s*:\s*true/);
   });
 });
