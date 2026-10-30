@@ -1,5 +1,9 @@
-/** 规范域名。无论请求来自哪个 Host，canonical 都指向这里，不做跳转。 */
-export const SITE = "https://goqice.com";
+/** 规范域名。公开页的 canonical、Open Graph 和 sitemap 都指向这里。 */
+export const SITE = "https://qicego.com";
+export const PRIMARY_HOST = "qicego.com";
+
+/** 这些 Host 整站 301 到规范域名。ai.qicego.com 和 ai.goqice.com 不在此列。 */
+const REDIRECT_HOSTS = new Set(["www.qicego.com", "goqice.com", "www.goqice.com", "qice.chang2.ccwu.cc"]);
 
 export const SITE_TITLE = "企策AI｜企业政策优惠与AI智能化升级服务平台";
 export const SITE_DESCRIPTION = "企策AI提供企业政策优惠初步评估、专业申报协助与AI FDE智能化升级服务。";
@@ -28,7 +32,43 @@ export function normalizePath(path: string): string {
   return bare.replace(/\/+$/, "") || "/";
 }
 
-/** 忽略 Host。旧域名 qice.chang2.ccwu.cc 与本地地址都规范到 goqice.com。 */
+/** 去掉端口和末尾点，不区分大小写。IPv6 只保留方括号内的地址。 */
+export function requestHost(hostHeader: string | null | undefined, fallbackHost = ""): string {
+  const raw = (hostHeader || fallbackHost || "").trim().toLowerCase();
+  if (!raw) return "";
+  if (raw.startsWith("[")) {
+    const end = raw.indexOf("]");
+    return end >= 0 ? raw.slice(0, end + 1) : raw;
+  }
+  return raw.replace(/:\d+$/, "").replace(/\.$/, "");
+}
+
+/**
+ * 旧主机名 301 到 https://qicego.com，保留原始路径和查询。
+ * 规范域名、本机，以及 ai.qicego.com / ai.goqice.com 不跳转。
+ */
+export function redirectLocation(
+  hostHeader: string | null | undefined,
+  fallbackHost: string,
+  pathname: string,
+  search: string,
+): string | null {
+  const host = requestHost(hostHeader, fallbackHost);
+  if (!REDIRECT_HOSTS.has(host)) return null;
+  const path = pathname.startsWith("/") ? pathname : `/${pathname}`;
+  const query = search ? (search.startsWith("?") ? search : `?${search}`) : "";
+  return `${SITE}${path}${query}`;
+}
+
+/** 非本机的登录 Cookie 一律加 Secure。本机仍看请求协议，方便本地 HTTP 验收。 */
+export function cookieShouldBeSecure(hostHeader: string | null | undefined, requestUrl: string): boolean {
+  const url = new URL(requestUrl);
+  const host = requestHost(hostHeader, url.hostname);
+  if (host === "localhost" || host === "127.0.0.1" || host === "[::1]" || host === "::1") return url.protocol === "https:";
+  return true;
+}
+
+/** 公开页链接一律用规范域名，不跟随请求 Host。 */
 export function canonicalFor(_host: string, path: string): string {
   const normalized = normalizePath(path);
   return normalized === "/" ? `${SITE}/` : `${SITE}${normalized}`;

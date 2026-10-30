@@ -9,9 +9,11 @@ import {
   SITEMAP_CONTENT_TYPE,
   SITE,
   canonicalFor,
+  cookieShouldBeSecure,
   decorateHtml,
   documentHeaders,
   pageKind,
+  redirectLocation,
   robotsTxt,
   shouldNoindex,
   sitemapXml,
@@ -47,10 +49,11 @@ describe("公开页 SEO", () => {
   it("sitemap 只列出首页和公开法律页", () => {
     const xml = sitemapXml();
     expect(SITEMAP_CONTENT_TYPE.startsWith("application/xml")).toBe(true);
-    expect(xml).toContain("<loc>https://goqice.com/</loc>");
-    expect(xml).toContain("<loc>https://goqice.com/legal/privacy</loc>");
-    expect(xml).toContain("<loc>https://goqice.com/legal/consent</loc>");
-    expect(xml).toContain("<loc>https://goqice.com/legal/terms</loc>");
+    expect(xml).toContain("<loc>https://qicego.com/</loc>");
+    expect(xml).toContain("<loc>https://qicego.com/legal/privacy</loc>");
+    expect(xml).toContain("<loc>https://qicego.com/legal/consent</loc>");
+    expect(xml).toContain("<loc>https://qicego.com/legal/terms</loc>");
+    expect(xml).not.toContain("goqice.com");
     expect(xml).not.toContain("/login");
     expect(xml).not.toContain("/register");
     expect(xml).not.toContain("/admin");
@@ -58,11 +61,13 @@ describe("公开页 SEO", () => {
     expect(xml).not.toContain("/api");
   });
 
-  it("首页 HTML 带真实文案，canonical 固定为 goqice.com", () => {
+  it("首页 HTML 带真实文案，canonical 固定为 qicego.com", () => {
     const html = decorateHtml(shell, "/");
-    expect(canonicalFor("qice.chang2.ccwu.cc", "/")).toBe("https://goqice.com/");
-    expect(canonicalFor("127.0.0.1:43123", "/")).toBe("https://goqice.com/");
-    expect(html).toContain('rel="canonical" href="https://goqice.com/"');
+    expect(canonicalFor("qice.chang2.ccwu.cc", "/")).toBe("https://qicego.com/");
+    expect(canonicalFor("127.0.0.1:43123", "/")).toBe("https://qicego.com/");
+    expect(html).toContain('rel="canonical" href="https://qicego.com/"');
+    expect(html).toContain('property="og:url" content="https://qicego.com/"');
+    expect(html).not.toContain("goqice.com");
     expect(html).toContain('name="google-site-verification" content="QUFnL2SkqIMTjBYg4f9jG-caFdtmHLNAp1ikX6XdWYI"');
     expect(html).toContain(`content="${KEYWORDS}"`);
     expect(html).toContain(`property="og:image" content="${OG_IMAGE}"`);
@@ -86,20 +91,20 @@ describe("公开页 SEO", () => {
       expect(pageKind(path)).toBe("private");
       expect(shouldNoindex(path)).toBe(true);
       expect(html).toContain('name="robots" content="noindex, nofollow"');
-      expect(html).toContain(`rel="canonical" href="https://goqice.com${path}"`);
+      expect(html).toContain(`rel="canonical" href="https://qicego.com${path}"`);
       expect(html).not.toContain("员工超过10人就一定能获得补贴吗？");
       expect(html).not.toContain("og:image");
       expect(html).not.toContain("google-site-verification");
       expect(documentHeaders(path)["x-robots-tag"]).toBe("noindex, nofollow");
     }
-    expect(canonicalFor("qice.chang2.ccwu.cc", "/admin")).toBe("https://goqice.com/admin");
+    expect(canonicalFor("qice.chang2.ccwu.cc", "/admin")).toBe("https://qicego.com/admin");
   });
 
   it("已知法律页有短正文，未知法律页 noindex", () => {
     const privacy = decorateHtml(shell, "/legal/privacy");
     expect(privacy).toContain("<h1>隐私政策</h1>");
     expect(privacy).toContain("模板，待法务确认");
-    expect(privacy).toContain('rel="canonical" href="https://goqice.com/legal/privacy"');
+    expect(privacy).toContain('rel="canonical" href="https://qicego.com/legal/privacy"');
     expect(privacy).toContain('name="google-site-verification" content="QUFnL2SkqIMTjBYg4f9jG-caFdtmHLNAp1ikX6XdWYI"');
     expect(privacy).not.toContain("noindex");
     const unknown = decorateHtml(shell, "/legal/other");
@@ -108,16 +113,38 @@ describe("公开页 SEO", () => {
     expect(unknown).not.toContain("让政策红利");
   });
 
+  it("旧主机名 301 到 qicego.com，并保留路径和查询", () => {
+    const cases = ["www.qicego.com", "goqice.com", "www.goqice.com", "qice.chang2.ccwu.cc", "GoQice.com:443", "www.qicego.com."];
+    for (const host of cases) {
+      expect(redirectLocation(host, "127.0.0.1", "/legal/privacy", "?from=old")).toBe(
+        "https://qicego.com/legal/privacy?from=old",
+      );
+    }
+    expect(redirectLocation("www.qicego.com", "qicego.com", "/", "")).toBe("https://qicego.com/");
+    expect(redirectLocation("qice.chang2.ccwu.cc", "127.0.0.1", "/admin/enterprises", "?page=2")).toBe(
+      "https://qicego.com/admin/enterprises?page=2",
+    );
+    for (const host of ["qicego.com", "ai.qicego.com", "ai.goqice.com", "127.0.0.1", "localhost", "AI.Qicego.com:443"]) {
+      expect(redirectLocation(host, host, "/login", "?next=/app")).toBeNull();
+    }
+    expect(redirectLocation(undefined, "goqice.com", "/robots.txt", "")).toBe("https://qicego.com/robots.txt");
+    expect(redirectLocation(undefined, "qicego.com", "/", "?ok=1")).toBeNull();
+  });
+
+  it("非本机登录 Cookie 一律 Secure，本机 HTTP 不加", () => {
+    expect(cookieShouldBeSecure("qicego.com", "http://qicego.com/api/auth/login")).toBe(true);
+    expect(cookieShouldBeSecure("goqice.com", "http://127.0.0.1:43123/api/auth/login")).toBe(true);
+    expect(cookieShouldBeSecure("127.0.0.1:43123", "http://127.0.0.1:43123/api/auth/login")).toBe(false);
+    expect(cookieShouldBeSecure("localhost", "https://localhost/api/auth/login")).toBe(true);
+  });
+
   it("Google 验证文件只有那一行", () => {
     expect(readFileSync("public/googled5c7c4e254bd8e0c.html", "utf8")).toBe(GOOGLE_VERIFY_BODY);
     expect(GOOGLE_VERIFY_CONTENT_TYPE.startsWith("text/html")).toBe(true);
   });
 
-  it("wrangler 让文档路由先进入 Worker，静态资源仍不经过 Worker", () => {
+  it("wrangler 让全部请求先进入 Worker，旧主机名才能在单页回退前跳转", () => {
     const raw = readFileSync("wrangler.jsonc", "utf8");
-    for (const route of ["/", "/robots.txt", "/sitemap.xml", "/googled5c7c4e254bd8e0c.html", "/login", "/register", "/legal/*", "/admin", "/admin/*", "/app", "/app/*", "/api/*"]) {
-      expect(raw).toContain(`"${route}"`);
-    }
-    expect(raw).not.toMatch(/"run_worker_first"\s*:\s*true/);
+    expect(raw).toMatch(/"run_worker_first"\s*:\s*true/);
   });
 });

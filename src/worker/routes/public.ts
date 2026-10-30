@@ -5,6 +5,7 @@ import {
   clearCookie,
   clientIp,
   cookie,
+  cookieShouldBeSecure,
   currentConsent,
   hitLimit,
   registerHourlyLimit,
@@ -85,8 +86,7 @@ publicRoutes.post("/auth/register", async (c) => {
     ),
   ]);
   await audit(c.env.DB, userId, "auth.register", "enterprise", entId, ip);
-  const secure = new URL(c.req.url).protocol === "https:";
-  c.header("set-cookie", cookie(token, secure));
+  c.header("set-cookie", cookie(token, cookieShouldBeSecure(c.req.header("host"), c.req.url)));
   return c.json({ ok: true, must_change_password: false, role: "enterprise" });
 });
 
@@ -130,7 +130,7 @@ publicRoutes.post("/auth/login", async (c) => {
     nowIso(),
   ).run();
   await audit(c.env.DB, user.id, "auth.login", "user", user.id, ip);
-  c.header("set-cookie", cookie(token, new URL(c.req.url).protocol === "https:"));
+  c.header("set-cookie", cookie(token, cookieShouldBeSecure(c.req.header("host"), c.req.url)));
   return c.json({ ok: true, role: user.role, must_change_password: Boolean(user.must_change_password) });
 });
 
@@ -142,7 +142,7 @@ publicRoutes.post("/auth/logout", async (c) => {
     const hash = await sha256Hex(decodeURIComponent(match[1]!));
     await c.env.DB.prepare("DELETE FROM sessions WHERE id = ?").bind(hash).run();
   }
-  c.header("set-cookie", clearCookie(new URL(c.req.url).protocol === "https:"));
+  c.header("set-cookie", clearCookie(cookieShouldBeSecure(c.req.header("host"), c.req.url)));
   return c.json({ ok: true });
 });
 
