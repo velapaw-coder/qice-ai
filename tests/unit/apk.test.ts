@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { homeHtml } from "../../src/client/home/markup";
 import worker from "../../src/worker/index";
-import { APK_CONTENT_TYPE, APK_PUBLIC_PATH, apkAssetResponse, apkDownloadName } from "../../src/worker/apk";
+import { APK_CACHE_CONTROL, APK_CONTENT_TYPE, APK_PUBLIC_PATH, apkAssetResponse, apkDownloadName, serveApk, type ApkEdgeCache } from "../../src/worker/apk";
 import { decorateHtml, pageKind } from "../../src/worker/seo";
 
 const shell = `<!doctype html><html><head></head><body><div id="root"></div></body></html>`;
@@ -59,22 +59,32 @@ describe("安卓安装包", () => {
 
   it("响应使用安卓安装包类型，单页回退的网页改成 404", async () => {
     const file = new Response(new Uint8Array([0x50, 0x4b, 0x03, 0x04]), {
-      headers: { "content-type": "application/octet-stream", etag: '"apk"' },
+      headers: {
+        "content-type": "application/octet-stream",
+        "cache-control": "public, max-age=0, must-revalidate",
+        etag: '"apk"',
+        "last-modified": "Wed, 21 Oct 2015 07:28:00 GMT",
+        "cf-cache-status": "HIT",
+      },
     });
     const ok = await apkAssetResponse(file, "GET", "qiceai-android.apk");
     expect(ok.status).toBe(200);
     expect(ok.headers.get("content-type")).toBe(APK_CONTENT_TYPE);
     expect(ok.headers.get("content-disposition")).toContain('filename="qiceai-android.apk"');
     expect(ok.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(ok.headers.get("cache-control")).toBe(APK_CACHE_CONTROL);
     expect(ok.headers.get("etag")).toBe('"apk"');
+    expect(ok.headers.get("last-modified")).toBe("Wed, 21 Oct 2015 07:28:00 GMT");
+    expect(ok.headers.get("cf-cache-status")).toBeNull();
     expect(new Uint8Array(await ok.arrayBuffer())[0]).toBe(0x50);
 
     const html = new Response("<!doctype html><html>spa</html>", {
-      headers: { "content-type": "text/html; charset=utf-8" },
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=60" },
     });
     const missing = await apkAssetResponse(html, "GET", "missing.apk");
     expect(missing.status).toBe(404);
     expect(missing.headers.get("content-type")).toContain("text/plain");
+    expect(missing.headers.get("cache-control")).toBe("no-store");
     expect(await missing.text()).not.toContain("spa");
   });
 
@@ -83,6 +93,9 @@ describe("安卓安装包", () => {
     const ok = await worker.fetch(new Request("https://qicego.com/downloads/qiceai-android.apk"), env);
     expect(ok.status).toBe(200);
     expect(ok.headers.get("content-type")).toBe(APK_CONTENT_TYPE);
+    expect(ok.headers.get("cache-control")).toBe(APK_CACHE_CONTROL);
+    expect(ok.headers.get("content-disposition")).toContain("qiceai-android.apk");
+    expect(ok.headers.get("x-content-type-options")).toBe("nosniff");
     expect(new Uint8Array(await ok.arrayBuffer())[0]).toBe(0x50);
 
     const versioned = await worker.fetch(new Request("https://qicego.com/downloads/qiceai-v1.2.0.apk"), env);
@@ -91,10 +104,67 @@ describe("安卓安装包", () => {
 
     const missing = await worker.fetch(new Request("https://qicego.com/downloads/missing.apk"), env);
     expect(missing.status).toBe(404);
+    expect(missing.headers.get("cache-control")).toBe("no-store");
     expect(await missing.text()).not.toContain("spa");
 
     const home = await worker.fetch(new Request("https://qicego.com/"), env);
     expect(home.headers.get("content-type")).toContain("text/html");
     expect(await home.text()).toContain("下载安卓版");
+  });
+
+  it("同一边缘的第二次 GET 命中缓存，404 不写入缓存", async () => {
+    const store = new Map<string, { body: Uint8Array; status: number; headers: [string, string][] }>();
+    const cache: ApkEdgeCache = {
+      async match(request) {
+        const found = store.get(request.url);
+        if (!found) return undefined;
+        return new Response(Uint8Array.from(found.body), { status: found.status, headers: found.headers });
+      },
+      async put(request, response) {
+        const body = new Uint8Array(await response.arrayBuffer());
+        store.set(request.url, { body, status: response.status, headers: [...response.headers] });
+      },
+    };
+    let reads = 0;
+    const assets = {
+      async fetch(request: Request) {
+        reads += 1;
+        const path = new URL(request.url).pathname;
+        if (path === "/downloads/missing.apk") {
+          return new Response("<!doctype html><html>spa</html>", { headers: { "content-type": "text/html" } });
+        }
+        return new Response(new Uint8Array([0x50, 0x4b, 0x03, 0x04, reads]), {
+          headers: { "content-type": "application/octet-stream", etag: '"edge"', "last-modified": "Tue, 01 Jan 2026 00:00:00 GMT" },
+        });
+      },
+    };
+    const url = "https://qicego.com/downloads/qiceai-android.apk";
+    const first = await serveApk(new Request(url), assets, "qiceai-android.apk", cache);
+    expect(first.headers.get("cache-control")).toBe(APK_CACHE_CONTROL);
+    expect(first.headers.get("etag")).toBe('"edge"');
+    expect(first.headers.get("last-modified")).toBe("Tue, 01 Jan 2026 00:00:00 GMT");
+    expect(new Uint8Array(await first.arrayBuffer())[4]).toBe(1);
+
+    const second = await serveApk(new Request(url), assets, "qiceai-android.apk", cache);
+    expect(reads).toBe(1);
+    expect(second.headers.get("cache-control")).toBe(APK_CACHE_CONTROL);
+    expect(second.headers.get("content-type")).toBe(APK_CONTENT_TYPE);
+    expect(second.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(new Uint8Array(await second.arrayBuffer())[4]).toBe(1);
+
+    const head = await serveApk(new Request(url, { method: "HEAD" }), assets, "qiceai-android.apk", cache);
+    expect(reads).toBe(1);
+    expect(head.status).toBe(200);
+    expect(head.headers.get("cache-control")).toBe(APK_CACHE_CONTROL);
+    expect((await head.arrayBuffer()).byteLength).toBe(0);
+
+    const missingUrl = "https://qicego.com/downloads/missing.apk";
+    const miss = await serveApk(new Request(missingUrl), assets, "missing.apk", cache);
+    expect(miss.status).toBe(404);
+    expect(miss.headers.get("cache-control")).toBe("no-store");
+    await miss.arrayBuffer();
+    await serveApk(new Request(missingUrl), assets, "missing.apk", cache);
+    expect(reads).toBe(3);
+    expect(store.has(missingUrl)).toBe(false);
   });
 });

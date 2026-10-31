@@ -6,7 +6,7 @@ import { enterpriseRoutes } from "./routes/enterprise";
 import { llmRoutes } from "./routes/llm";
 import { publicRoutes } from "./routes/public";
 import { ticketRoutes } from "./routes/tickets";
-import { apkAssetResponse, apkDownloadName } from "./apk";
+import { apkDownloadName, apkEdgeCache, serveApk } from "./apk";
 import { decorateHtml, documentHeaders, pageKind, redirectLocation, robotsTxt, sitemapXml, GOOGLE_VERIFY_BODY, GOOGLE_VERIFY_CONTENT_TYPE, GOOGLE_VERIFY_PATH, ROBOTS_CONTENT_TYPE, SITEMAP_CONTENT_TYPE } from "./seo";
 import { loadSession, type Env, type Role, type Vars } from "./util";
 
@@ -41,8 +41,14 @@ app.use("*", async (c, next) => {
   }
   const apkName = apkDownloadName(normalized);
   if (apkName) {
-    const asset = await c.env.ASSETS.fetch(c.req.raw);
-    return apkAssetResponse(asset, c.req.method, apkName);
+    // 单测直接调用 fetch 时没有 ExecutionContext，Hono 这里会抛错。
+    let ctx: { waitUntil(promise: Promise<unknown>): void } | undefined;
+    try {
+      ctx = c.executionCtx;
+    } catch {
+      ctx = undefined;
+    }
+    return serveApk(c.req.raw, c.env.ASSETS, apkName, apkEdgeCache(), ctx);
   }
   if (!pageKind(normalized)) return next();
   const assetUrl = new URL(c.req.url);
