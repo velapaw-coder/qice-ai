@@ -1,23 +1,20 @@
-import { readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { homeHtml } from "../../src/client/home/markup";
+import { APK_DOWNLOAD_URL, APK_R2_DEV_URL, apkDownloadName, apkRedirectTarget } from "../../src/worker/apk";
 import worker from "../../src/worker/index";
-import { APK_CONTENT_TYPE, APK_PUBLIC_PATH, apkAssetResponse, apkDownloadName } from "../../src/worker/apk";
 import { decorateHtml, pageKind } from "../../src/worker/seo";
 
 const shell = `<!doctype html><html><head></head><body><div id="root"></div></body></html>`;
 
 function assets() {
-  const files = new Set(["/downloads/qiceai-android.apk", "/downloads/qiceai-v1.2.0.apk"]);
   return {
     async fetch(request: Request) {
       const path = new URL(request.url).pathname;
-      if (files.has(path)) {
-        return new Response(new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2]), {
-          headers: { "content-type": "application/octet-stream", etag: '"apk"' },
-        });
+      if (path.startsWith("/downloads/") && path.endsWith(".apk")) {
+        throw new Error("安装包不应再由 Worker 读出");
       }
-      return new Response("<!doctype html><html><body>spa</body></html>", {
+      return new Response("<!doctype html><html><body><div id=\"root\"></div></body></html>", {
         status: 200,
         headers: { "content-type": "text/html; charset=utf-8" },
       });
@@ -26,75 +23,56 @@ function assets() {
 }
 
 describe("安卓安装包", () => {
-  it("首页卡片指向稳定下载地址，安装包路径不是页面", () => {
-    expect(homeHtml).toContain(`href="${APK_PUBLIC_PATH}"`);
-    expect(homeHtml).toContain('download="qiceai-android.apk"');
+  it("首页卡片指向 media.qicego.com，文案不变", () => {
+    expect(APK_DOWNLOAD_URL).toBe("https://media.qicego.com/site/qiceai-android.apk?v=12");
+    expect(APK_R2_DEV_URL).toBe("https://pub-e921aafb91ca4eafb5855ceb8ae23624.r2.dev/site/qiceai-android.apk?v=12");
+    expect(homeHtml).toContain(`href="${APK_DOWNLOAD_URL}"`);
+    expect(homeHtml).not.toContain(APK_R2_DEV_URL);
+    expect(homeHtml).not.toContain("r2.dev");
+    expect(homeHtml).not.toContain('download="qiceai-android.apk"');
     expect(homeHtml).toContain('data-testid="android-download"');
     expect(homeHtml).toContain("下载安卓版");
     expect(homeHtml).toContain("允许安装未知来源");
     expect(homeHtml).toContain("打开后进入 qicego.com");
-    expect(pageKind(APK_PUBLIC_PATH)).toBeNull();
-    expect(pageKind("/downloads/qiceai-v1.2.0.apk")).toBeNull();
+    expect(pageKind("/downloads/qiceai-android.apk")).toBeNull();
     const html = decorateHtml(shell, "/");
-    expect(html).toContain('href="/downloads/qiceai-android.apk">下载安卓版</a>');
+    expect(html).toContain(`href="${APK_DOWNLOAD_URL}">下载安卓版</a>`);
+    expect(html).not.toContain("r2.dev");
   });
 
-  it("public 目录同时放稳定文件名和 v1.2.0，内容相同", () => {
-    const stable = readFileSync("public/downloads/qiceai-android.apk");
-    const versioned = readFileSync("public/downloads/qiceai-v1.2.0.apk");
-    expect(stable.equals(versioned)).toBe(true);
-    expect(stable.subarray(0, 4).toString("hex")).toBe("504b0304");
-    expect(stable.includes(Buffer.from("com.qicego.app", "utf16le"))).toBe(true);
-    expect(stable.includes(Buffer.from("APK Sig Block 42"))).toBe(true);
+  it("仓库不再携带安装包文件", () => {
+    expect(existsSync("public/downloads/qiceai-android.apk")).toBe(false);
+    expect(existsSync("public/downloads/qiceai-v1.2.0.apk")).toBe(false);
   });
 
-  it("只接受 downloads 目录里的 apk 文件名", () => {
+  it("只把 downloads 目录里的 apk 文件名当成旧地址", () => {
     expect(apkDownloadName("/downloads/qiceai-android.apk")).toBe("qiceai-android.apk");
     expect(apkDownloadName("/downloads/qiceai-v1.2.0.apk")).toBe("qiceai-v1.2.0.apk");
+    expect(apkRedirectTarget("/downloads/qiceai-android.apk")).toBe(APK_DOWNLOAD_URL);
+    expect(apkRedirectTarget("/downloads/qiceai-v1.2.0.apk")).toBe(APK_DOWNLOAD_URL);
+    expect(apkRedirectTarget("/downloads/other-build.apk")).toBe(APK_DOWNLOAD_URL);
     expect(apkDownloadName("/downloads/../secret.apk")).toBeNull();
+    expect(apkRedirectTarget("/downloads/../secret.apk")).toBeNull();
     expect(apkDownloadName("/downloads/qiceai-android.apk.txt")).toBeNull();
     expect(apkDownloadName("/app/downloads/qiceai-android.apk")).toBeNull();
     expect(apkDownloadName("/downloads/qiceai%20android.apk")).toBeNull();
   });
 
-  it("响应使用安卓安装包类型，单页回退的网页改成 404", async () => {
-    const file = new Response(new Uint8Array([0x50, 0x4b, 0x03, 0x04]), {
-      headers: { "content-type": "application/octet-stream", etag: '"apk"' },
-    });
-    const ok = await apkAssetResponse(file, "GET", "qiceai-android.apk");
-    expect(ok.status).toBe(200);
-    expect(ok.headers.get("content-type")).toBe(APK_CONTENT_TYPE);
-    expect(ok.headers.get("content-disposition")).toContain('filename="qiceai-android.apk"');
-    expect(ok.headers.get("x-content-type-options")).toBe("nosniff");
-    expect(ok.headers.get("etag")).toBe('"apk"');
-    expect(new Uint8Array(await ok.arrayBuffer())[0]).toBe(0x50);
-
-    const html = new Response("<!doctype html><html>spa</html>", {
-      headers: { "content-type": "text/html; charset=utf-8" },
-    });
-    const missing = await apkAssetResponse(html, "GET", "missing.apk");
-    expect(missing.status).toBe(404);
-    expect(missing.headers.get("content-type")).toContain("text/plain");
-    expect(await missing.text()).not.toContain("spa");
-  });
-
-  it("Worker 直接返回安装包，不把这个地址交给首页路由", async () => {
+  it("旧的 /downloads/*.apk 307 到 media.qicego.com，不会回成首页", async () => {
     const env = { ASSETS: assets() };
-    const ok = await worker.fetch(new Request("https://qicego.com/downloads/qiceai-android.apk"), env);
-    expect(ok.status).toBe(200);
-    expect(ok.headers.get("content-type")).toBe(APK_CONTENT_TYPE);
-    expect(new Uint8Array(await ok.arrayBuffer())[0]).toBe(0x50);
-
-    const versioned = await worker.fetch(new Request("https://qicego.com/downloads/qiceai-v1.2.0.apk"), env);
-    expect(versioned.status).toBe(200);
-    expect(versioned.headers.get("content-type")).toBe(APK_CONTENT_TYPE);
-
-    const missing = await worker.fetch(new Request("https://qicego.com/downloads/missing.apk"), env);
-    expect(missing.status).toBe(404);
-    expect(await missing.text()).not.toContain("spa");
+    for (const path of ["/downloads/qiceai-android.apk", "/downloads/qiceai-v1.2.0.apk", "/downloads/missing.apk"]) {
+      const res = await worker.fetch(new Request(`https://qicego.com${path}`), env);
+      expect(res.status).toBe(307);
+      expect(res.headers.get("location")).toBe(APK_DOWNLOAD_URL);
+      expect(res.headers.get("location")).not.toContain("r2.dev");
+      expect(await res.text()).not.toContain("<html");
+    }
+    const head = await worker.fetch(new Request("https://qicego.com/downloads/qiceai-android.apk/", { method: "HEAD" }), env);
+    expect(head.status).toBe(307);
+    expect(head.headers.get("location")).toBe(APK_DOWNLOAD_URL);
 
     const home = await worker.fetch(new Request("https://qicego.com/"), env);
     expect(home.headers.get("content-type")).toContain("text/html");
-    expect(await home.text()).toContain("下载安卓版");
+    expect(await home.text()).toContain(APK_DOWNLOAD_URL);
   });
 });
