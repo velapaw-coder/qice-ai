@@ -6,7 +6,7 @@ import { enterpriseRoutes } from "./routes/enterprise";
 import { llmRoutes } from "./routes/llm";
 import { publicRoutes } from "./routes/public";
 import { ticketRoutes } from "./routes/tickets";
-import { apkAssetResponse, apkDownloadName } from "./apk";
+import { apkRedirectTarget } from "./apk";
 import { decorateHtml, documentHeaders, pageKind, redirectLocation, robotsTxt, sitemapXml, GOOGLE_VERIFY_BODY, GOOGLE_VERIFY_CONTENT_TYPE, GOOGLE_VERIFY_PATH, ROBOTS_CONTENT_TYPE, SITEMAP_CONTENT_TYPE } from "./seo";
 import { loadSession, type Env, type Role, type Vars } from "./util";
 
@@ -39,10 +39,9 @@ app.use("*", async (c, next) => {
     if (c.req.method === "HEAD") return c.body(null, 200, headers);
     return c.body(GOOGLE_VERIFY_BODY, 200, headers);
   }
-  const apkName = apkDownloadName(normalized);
-  if (apkName) {
-    const asset = await c.env.ASSETS.fetch(c.req.raw);
-    return apkAssetResponse(asset, c.req.method, apkName);
+  const apkTarget = apkRedirectTarget(normalized);
+  if (apkTarget) {
+    return c.body(null, 307, { location: apkTarget, "cache-control": "no-cache" });
   }
   if (!pageKind(normalized)) return next();
   const assetUrl = new URL(c.req.url);

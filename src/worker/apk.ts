@@ -1,10 +1,14 @@
-import { contentDisposition } from "./util";
+/**
+ * 安卓安装包放在 Cloudflare R2，经 media.qicego.com 分发。
+ * 换包时只改 ?v=，首页链接和旧地址跳转会一起更新。
+ */
+export const APK_DOWNLOAD_URL = "https://media.qicego.com/site/qiceai-android.apk?v=12";
 
-/** 安卓安装包的标准类型。未知扩展名时退回二进制流，避免被当成网页。 */
-export const APK_CONTENT_TYPE = "application/vnd.android.package-archive";
-
-/** 首页使用的稳定地址。版本号文件放在同一目录，不写进这个链接。 */
-export const APK_PUBLIC_PATH = "/downloads/qiceai-android.apk";
+/**
+ * R2 开发域名，只作备用记录。页面链接和 307 都不要用它。
+ * https://pub-e921aafb91ca4eafb5855ceb8ae23624.r2.dev/site/qiceai-android.apk?v=12
+ */
+export const APK_R2_DEV_URL = "https://pub-e921aafb91ca4eafb5855ceb8ae23624.r2.dev/site/qiceai-android.apk?v=12";
 
 const APK_PATH = /^\/downloads\/([A-Za-z0-9][A-Za-z0-9._-]*\.apk)$/;
 
@@ -14,26 +18,7 @@ export function apkDownloadName(pathname: string): string | null {
   return match?.[1] ?? null;
 }
 
-/**
- * 把静态资源响应改成安装包下载。
- * 单页回退会把找不到的路径换成 index.html；那种响应不能当安装包发出去。
- */
-export async function apkAssetResponse(asset: Response, method: string, filename: string): Promise<Response> {
-  const type = (asset.headers.get("content-type") || "").toLowerCase();
-  if (!asset.ok || type.includes("text/html")) {
-    await asset.body?.cancel();
-    return new Response("没有这个安装包", {
-      status: 404,
-      headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
-    });
-  }
-  const headers = new Headers(asset.headers);
-  headers.set("content-type", APK_CONTENT_TYPE);
-  headers.set("content-disposition", contentDisposition(filename, false));
-  headers.set("x-content-type-options", "nosniff");
-  if (method === "HEAD") {
-    await asset.body?.cancel();
-    return new Response(null, { status: asset.status, headers });
-  }
-  return new Response(asset.body, { status: asset.status, headers });
+/** 旧的站内安装包地址一律临时跳到当前 R2 地址，避免被单页回退换成首页。 */
+export function apkRedirectTarget(pathname: string): string | null {
+  return apkDownloadName(pathname) ? APK_DOWNLOAD_URL : null;
 }
