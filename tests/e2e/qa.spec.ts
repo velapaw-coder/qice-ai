@@ -69,7 +69,7 @@ async function uploadPair(page: Page, vat: string, ss: string) {
 async function openEnterprise(page: Page, name: string) {
   await page.goto("/admin/enterprises");
   await page.getByTestId("enterprise-search").fill(name);
-  await page.getByRole("link", { name, exact: true }).click();
+  await page.getByRole("link", { name, exact: true }).click({ timeout: 20_000 });
   await expect(page.getByTestId("admin-review")).toBeVisible();
 }
 
@@ -280,6 +280,17 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
     await consultantPage.goto("/admin");
     await expect(consultantPage.getByRole("link", { name: FIX })).toBeVisible();
 
+    const soleList = await adminPage.request.get(`/api/admin/enterprises?q=${encodeURIComponent(SOLE)}&status=`);
+    const soleBody = (await soleList.json()) as { enterprises?: { name: string }[] };
+    if (!(soleBody.enterprises || []).some((item) => item.name === SOLE)) {
+      const sole = await browser.newContext();
+      contexts.push(sole);
+      const solePage = await sole.newPage();
+      await register(solePage, SOLE, "13700000002", "Sole12345");
+      await uploadPair(solePage, "fixtures/fake/个体户-增值税申报表-合成.xlsx", "fixtures/fake/个体户-社保清单-合成.xlsx");
+      await solePage.getByTestId("submit").click();
+      await expect(solePage.getByTestId("status-title")).toHaveText("暂不支持", { timeout: 30_000 });
+    }
     await openEnterprise(adminPage, SOLE);
     await expect(adminPage.getByTestId("profile-facts")).toContainText("主体 individual");
     await expect(adminPage.getByTestId("admin-review")).toContainText("暂不支持");
@@ -545,6 +556,11 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
     await home.goto("/");
     await home.setViewportSize({ width: 390, height: 844 });
     await home.getByTestId("home-menu").click();
+    await expect(home.getByTestId("home-primary")).toHaveAttribute("href", "#contact");
+    await expect(home.getByTestId("home-secondary")).toHaveAttribute("href", "#contact");
+    await expect(home.getByTestId("policy-entry")).toHaveAttribute("href", "/register");
+    await expect(home.getByTestId("home-login")).toHaveAttribute("href", "/login");
+    await expect(home.getByTestId("android-download")).toHaveAttribute("href", "https://media.qicego.com/site/qiceai-android.apk?v=12");
     await expect(home.getByTestId("home-drawer")).toBeVisible();
     await assertNoDeadAnchors(home);
     await shot(home, "qa-home-drawer");
@@ -554,6 +570,7 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
     const routes = [
       "/admin",
       "/admin/enterprises",
+      "/admin/growth-leads",
       "/admin/deals/policy",
       "/admin/deals/fde",
       "/admin/policies",
@@ -572,6 +589,11 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
       expect(response?.status(), route).not.toBe(404);
       await assertNoDeadAnchors(adminPage);
     }
+    const consultantLeads = await consultantPage.goto("/admin/growth-leads");
+    expect(consultantLeads?.status()).not.toBe(404);
+    await expect(consultantPage.getByTestId("growth-lead-admin")).toBeVisible();
+    const enterpriseLeads = await smallPage.request.get("/api/admin/growth-leads");
+    expect(enterpriseLeads.status()).toBe(403);
     await adminPage.setViewportSize({ width: 390, height: 844 });
     await adminPage.goto("/admin");
     await adminPage.getByTestId("admin-menu").click();

@@ -2,54 +2,48 @@
 
 export const BRAND_NAME = "企策AI增长";
 export const BRAND_EN = "QICE AI GROWTH";
-export const BRAND_TAGLINE = "企业AI增长陪跑服务平台";
+export const BRAND_POSITIONING = "AI驱动企业价值重构与长期增长陪跑平台";
+export const BRAND_MISSION = "发现人的真实向往，激活企业潜在价值";
+export const BRAND_VISION = "让企业通过AI创造新的商业可能与第二增长曲线";
+export const BRAND_PROPOSITION = "发现向往 · 连接同频 · 重构商业 · 共创增长";
+export const BRAND_LINE = BRAND_PROPOSITION;
+export const HERO_LEAD = "企策AI增长，不只是帮助企业用AI把今天的生意做得更好，更重要的是，陪伴企业重新发现客户的向往，创造明天的新生意。";
+export const VISION_NOTE = "这是品牌愿景。第二增长曲线要在确认场景后，用可核验的改善来看，不是已经交付的结果。";
+export const BRAND_TAGLINE = BRAND_POSITIONING;
+export const BRAND_SIGNATURE = "让AI发现未被看见的需求，让商业创造未被实现的价值。";
+export const PUBLIC_SITE = "www.qicego.com";
 export const VALUE_PROPOSITION = "让AI真正进入业务，用可验证的改善支持企业增长。";
-export const SITE_TITLE = `${BRAND_NAME}｜${BRAND_TAGLINE}`;
+export const SITE_TITLE = `${BRAND_NAME}｜${BRAND_POSITIONING}`;
 export const SITE_DESCRIPTION =
-  "企策AI增长面向制造业、工业贸易、实体和成长型中小企业。从询价、报价、跟进和重复操作等经营问题出发，可预约增长交流或申请AI场景体验。政策评估可选，不与AI服务捆绑，也不承诺订单或利润。";
-export const KEYWORDS = "企策AI增长,QICE AI GROWTH,企业AI增长陪跑,询价报价辅助,深圳市精灵探索科技有限公司";
+  "企策AI增长是AI驱动企业价值重构与长期增长陪跑平台。发现向往、连接同频、重构商业、共创增长。可预约增长交流或申请AI场景体验。政策评估可选，不与AI服务捆绑，也不承诺订单、利润或第二增长曲线。";
+export const KEYWORDS = "企策AI增长,QICE AI GROWTH,企业价值重构,长期增长陪跑,询价报价辅助,深圳市精灵探索科技有限公司";
 export const COMPANY_NAME = "深圳市精灵探索科技有限公司";
 export const CONTACT_LINE = "联系方式见登录页";
 
-export const HERO_SUPPORT =
-  "从订单、成本、效率和利润里的具体问题出发，先做一件边界清楚、可以验收的工作，再决定是否扩展。";
-
-export const PAIN_NOTE =
-  "争取有效商机、减少可避免的成本、提高处理效率、改善经营利润，是要评估的方向，不是对订单或利润的保证。";
-
-export const pains = [
-  { title: "询价遗漏", text: "需求散落在微信、邮件和表格里，有效询价没有被及时接住。" },
-  { title: "报价慢", text: "规格、价格和条款要来回查找，报价草稿出得慢。" },
-  { title: "跟进不及时", text: "报价发出之后没有人接着跟，机会在等待里变冷。" },
-  { title: "重复录入与资料分散", text: "同一份信息反复录入、查找和核对，数据散在不同表格和对话里。" },
+export const NARRATIVE = [
+  "企策AI增长致力于帮助企业通过人工智能重新发现客户需求、激活现有资源、创新商业模式，探索可持续的第二增长曲线。",
+  "我们相信，企业真正的增长机会，不一定只在现有产品和业务中，也可能隐藏在用户尚未被充分理解的需求、兴趣与人生向往里。",
+  "我们的目标，不只是帮助企业把原来的生意做得更好，更是帮助企业发现下一门生意在哪里。",
 ];
 
-export const SERVICE_NOTE =
-  "销售辅助、客服、办公协同和经营分析可以按需评估。是否承接，取决于需求、工具能力和交付资源，不代表这些能力已经全部做成产品。";
+export const METHOD_NOTE = "这六个环节用来沟通和共同规划，不是已经上线、可以自动运行的功能，也不是固定的团队配置。";
 
-export const services = [
-  {
-    title: "AI增长诊断",
-    text: "了解现有流程、主要痛点和资料基础，识别优先场景，并写清实施范围、企业要配合的事项和验收指标。",
-  },
-  {
-    title: "AI场景实施",
-    text: "按双方确认的方案，做工具选型、资料整理、场景配置、使用培训和试运行，让AI进入一项具体工作。",
-  },
-  {
-    title: "可选政策机会评估",
-    text: "企业自愿选择后，按当时有效的规定和实际服务能力评估政策机会。与AI合作分开确认，不捆绑购买。",
-  },
-  {
-    title: "持续增长陪跑",
-    text: "跟踪使用情况和业务反馈，修正流程、资料和应用方式。具备条件时，再评估下一项场景。",
-  },
+export const methods = [
+  { title: "创始人IP", text: "从创始人的价值观和已有判断出发，作为讨论新机会的起点。" },
+  { title: "AI分身", text: "探讨如何把创始人的表达和经验整理成可复用的辅助。是否做、做到哪一步，交流后再确认。" },
+  { title: "用户洞察", text: "一起看尚未被充分理解的需求、兴趣和向往。不表示系统会自动产出洞察。" },
+  { title: "同频社区", text: "讨论怎样连接真正需要服务的人群。这不是已经开通的社交匹配。" },
+  { title: "商业重构", text: "基于企业已有资源，看新的产品、消费场景和收入来源是否值得尝试。" },
+  { title: "增长陪跑", text: "确认范围后，把选定的构想做成可验证、可运营的一小步，再决定是否继续。" },
 ];
+
+export const ENABLEMENT_NOTE =
+  "特色赋能是辅助。AI能力按确认的场景提供，不代表已经具备全部产品。政策红利挖掘自愿选择，不承诺金额或获批，也不与AI合作捆绑。";
 
 export const PILOT_TITLE = "询价整理与报价辅助";
 export const PILOT_STATUS = "拟开放试点，需先确认适配，不是已经上线的成熟工具。";
 export const PILOT_INTRO =
-  "建议从制造业和工业贸易里常见的询价报价切入。下面是首发试点的设计，用来判断是否适合，不是已经可以随时开通的标准产品。实际开放范围在体验或实施前确认。";
+  "如果企业当前就卡在询价和报价，可以把这一项当作可讨论的场景。它是拟开放的设计，不是首页唯一主线，也不是已经上线的标准产品。是否开放，要先确认适配。";
 export const PILOT_CLOSE =
   "开始前先记录当前的处理时间、关键信息完整度和需要返工的情况。结束后只用双方确认的同类样本和统计方法比较，不预设提升幅度。资料不足或场景不适配时，缩小范围或暂停。";
 
@@ -91,8 +85,8 @@ export const FEE_PARAS = [
 ];
 
 export const FIT_PARAS = [
-  "适合希望改善询价报价、销售跟进或重复办公流程的制造业、工业贸易、实体企业和成长型中小企业。需要有具体痛点、有可授权使用的业务资料，并愿意指定内部对接人参与试点。",
-  "不必一开始改造全部流程，也不必先判断能否获得政策支持。需要保证获客、保证利润，或要求交易决策完全无人审核的，不适合作为首期承诺。",
+  "适合希望从创始人价值观和已有资源出发，寻找下一门生意的企业。需要愿意指定内部对接人，并在确认用途后提供必要资料。",
+  "不必先办政策，也不必一次改造全部业务。需要保证获客、保证利润，或要求交易决策完全无人审核的，不适合作为首期承诺。",
 ];
 
 export const faqs = [
@@ -121,9 +115,9 @@ export const faqs = [
 export const APK_TITLE = "下载安卓版";
 export const APK_HINT = "需 Android 手机，并允许安装未知来源。打开后进入 qicego.com。";
 
-export const CLOSING_TITLE = "先带一个真实问题来交流";
+export const CLOSING_TITLE = "先约一次增长交流";
 export const CLOSING_TEXT =
-  "询价太杂、报价太慢、跟进容易遗漏，或是重复工作占掉太多时间，都可以从这一件开始。敏感业务资料等明确用途和授权之后再提供。";
+  "带上你想看的下一门生意，或现在最想理清的一项资源。敏感资料等明确用途和授权之后再提供。提交只用于联系，不会自动开通服务。";
 
 export const CONSENT_TEXT =
   "我已阅读隐私政策，同意仅为安排本次增长交流或场景体验，使用上面的企业名称、联系人、手机号、行业和主要痛点。这不会创建登录账号，也不会要求上传税表或社保资料。";
@@ -137,16 +131,25 @@ export function homeArticleHtml(apkHref: string): string {
   const blocks = [
     `<h1>${esc(BRAND_NAME)}</h1>`,
     `<p>${esc(BRAND_EN)}</p>`,
-    `<p>${esc(BRAND_TAGLINE)}</p>`,
-    `<p>${esc(VALUE_PROPOSITION)}</p>`,
-    `<p>${esc(HERO_SUPPORT)}</p>`,
+    `<p>${esc(BRAND_POSITIONING)}</p>`,
+    `<p>${esc(BRAND_PROPOSITION)}</p>`,
+    `<p>${esc(HERO_LEAD)}</p>`,
+    `<h2>品牌使命</h2>`,
+    `<p>${esc(BRAND_MISSION)}</p>`,
+    `<h2>品牌愿景</h2>`,
+    `<p>${esc(BRAND_VISION)}</p>`,
+    `<p>${esc(VISION_NOTE)}</p>`,
+    `<p>${esc(BRAND_SIGNATURE)}</p>`,
+    ...NARRATIVE.map((item) => `<p>${esc(item)}</p>`),
     `<p><a href="${apkHref}">${esc(APK_TITLE)}</a>。${esc(APK_HINT)}</p>`,
-    "<h2>经营里常见的卡住点</h2>",
-    `<p>${esc(PAIN_NOTE)}</p>`,
-    ...pains.flatMap((item) => [`<h3>${esc(item.title)}</h3>`, `<p>${esc(item.text)}</p>`]),
-    "<h2>四项服务</h2>",
-    ...services.flatMap((item) => [`<h3>${esc(item.title)}</h3>`, `<p>${esc(item.text)}</p>`]),
-    `<p>${esc(SERVICE_NOTE)}</p>`,
+    "<h2>核心方法</h2>",
+    `<p>${esc(METHOD_NOTE)}</p>`,
+    ...methods.flatMap((item) => [`<h3>${esc(item.title)}</h3>`, `<p>${esc(item.text)}</p>`]),
+    "<h2>特色赋能</h2>",
+    "<h3>AI能力支持</h3>",
+    "<h3>政策红利挖掘</h3>",
+    `<p>${esc(ENABLEMENT_NOTE)}</p>`,
+    `<p>${esc(VALUE_PROPOSITION)}</p>`,
     `<h2>${esc(PILOT_TITLE)}</h2>`,
     `<p>${esc(PILOT_STATUS)}</p>`,
     `<p>${esc(PILOT_INTRO)}</p>`,

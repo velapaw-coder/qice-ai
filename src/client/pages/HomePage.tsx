@@ -5,8 +5,19 @@ import {
   APK_HINT,
   APK_TITLE,
   BRAND_EN,
+  BRAND_MISSION,
   BRAND_NAME,
+  BRAND_POSITIONING,
+  BRAND_PROPOSITION,
+  BRAND_SIGNATURE,
   BRAND_TAGLINE,
+  BRAND_VISION,
+  ENABLEMENT_NOTE,
+  HERO_LEAD,
+  METHOD_NOTE,
+  NARRATIVE,
+  PUBLIC_SITE,
+  VISION_NOTE,
   CLOSING_TEXT,
   CLOSING_TITLE,
   COMPANY_NAME,
@@ -15,8 +26,6 @@ import {
   FEE_PARAS,
   FIT_PARAS,
   FREE_NOTE,
-  HERO_SUPPORT,
-  PAIN_NOTE,
   PILOT_CLOSE,
   PILOT_INTRO,
   PILOT_STATUS,
@@ -24,12 +33,10 @@ import {
   POLICY_LINK_LABEL,
   POLICY_LINK_NOTE,
   POLICY_PARAS,
-  SERVICE_NOTE,
   VALUE_PROPOSITION,
   faqs,
-  pains,
+  methods,
   pilotRows,
-  services,
   steps,
 } from "@shared/growthHome";
 import { GROWTH_INTENTS, GROWTH_PAINS, parseGrowthLead, type GrowthIntent } from "@shared/growthLead";
@@ -41,9 +48,9 @@ const fieldClass =
   "w-full rounded-[11px] border border-[#d8e1ef] bg-white px-3 py-3 text-base text-[#182642] outline-none placeholder:text-[#526987] focus:border-[#1e4fc8] focus:ring-2 focus:ring-[#a8c1ff] disabled:bg-[#f3f6fb] disabled:text-[#3e4e68]";
 
 const nav = [
-  { href: "#services", label: "四项服务" },
-  { href: "#value", label: "经营问题" },
-  { href: "#pilot", label: "首发试点" },
+  { href: "#value", label: "品牌叙事" },
+  { href: "#services", label: "核心方法" },
+  { href: "#pilot", label: "适用场景" },
   { href: "#process", label: "合作步骤" },
   { href: "#policy", label: "政策辅助" },
   { href: "#faq", label: "常见问题" },
@@ -125,8 +132,13 @@ export function HomePage() {
         method: "POST",
         body: JSON.stringify({ ...parsed.value, consent: true, company_website: String(form.get("company_website") || "") }),
       });
-      if (!saved.id) throw new Error("提交没有保存，请稍后再试");
-      setResult({ id: saved.id, duplicate: Boolean(saved.duplicate) });
+      if (saved.duplicate) {
+        setResult({ id: "", duplicate: true });
+      } else if (!saved.id) {
+        throw new Error("提交没有保存，请稍后再试");
+      } else {
+        setResult({ id: saved.id, duplicate: false });
+      }
     } catch (err) {
       setResult(null);
       setError(err instanceof ApiError ? err.message : "提交没有保存，请检查网络后再试");
@@ -198,18 +210,18 @@ export function HomePage() {
 
       <main>
         <div className="bg-[#0c1936] text-white">
-          <div className="mx-auto grid w-full max-w-6xl items-center gap-10 px-4 py-16 md:px-6 md:py-24 lg:grid-cols-[1.15fr_0.85fr]">
+          <div className="mx-auto grid w-full max-w-6xl items-center gap-8 px-4 py-10 md:gap-10 md:px-6 md:py-20 lg:grid-cols-[1.15fr_0.85fr]">
             <div>
               <p className="text-sm font-semibold tracking-[0.14em] text-[#b9d5ff]">{BRAND_EN}</p>
-              <h1 className="mt-4 text-[2.4rem] font-extrabold leading-[1.15] tracking-tight md:text-6xl">{BRAND_NAME}</h1>
-              <p className="mt-4 text-xl font-semibold text-white md:text-2xl">{BRAND_TAGLINE}</p>
-              <p className="mt-5 max-w-xl text-lg leading-8 text-[#d5e2f7]">{VALUE_PROPOSITION}</p>
-              <p className="mt-3 max-w-xl text-base leading-7 text-[#c3d0e7]">{HERO_SUPPORT}</p>
-              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <h1 className="mt-3 text-[2rem] font-extrabold leading-[1.15] tracking-tight md:text-6xl">{BRAND_NAME}</h1>
+              <p className="mt-3 max-w-xl text-base font-semibold leading-7 text-white md:text-2xl" data-testid="brand-positioning">{BRAND_POSITIONING}</p>
+              <p className="mt-3 max-w-xl text-xl font-extrabold leading-snug tracking-tight text-[#d5e2f7] md:text-3xl" data-testid="brand-line">{BRAND_PROPOSITION}</p>
+              <p className="mt-4 max-w-xl text-base leading-7 text-[#d5e2f7]" data-testid="hero-lead">{HERO_LEAD}</p>
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row">
                 <Button asChild className="w-full bg-[#1e4fc8] px-5 py-3 hover:bg-[#1e4fc8] sm:w-auto">
                   <a href="#contact" data-testid="home-primary" onClick={() => choose("growth_talk")}>预约增长交流</a>
                 </Button>
-                <a href="#contact" data-testid="home-secondary" onClick={() => choose("scene_trial")} className="inline-flex items-center justify-center rounded-[11px] border border-[#c3d0e7] px-5 py-3 text-sm font-bold text-white hover:bg-white/10">
+                <a href="#contact" data-testid="home-secondary" onClick={() => choose("scene_trial")} className="inline-flex w-full items-center justify-center rounded-[11px] border border-[#c3d0e7] px-5 py-3 text-sm font-bold text-white hover:bg-white/10 sm:w-auto">
                   申请AI场景体验
                 </a>
               </div>
@@ -222,37 +234,38 @@ export function HomePage() {
                 </span>
               </a>
             </div>
-            <aside className="rounded-3xl border border-white/15 bg-white p-6 text-[#182642] md:p-8" aria-label="首发试点说明">
-              <p className="text-sm font-bold text-[#1e4fc8]">建议首发试点</p>
-              <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-[#0c1832]">{PILOT_TITLE}</h2>
-              <p className="mt-3 text-sm leading-6 text-[#526987]">{PILOT_STATUS}</p>
-              <ol className="mt-6 space-y-3 text-sm leading-6">
-                {["整理询价要素", "标出缺项和冲突", "按授权资料起草报价", "企业人员审批后才使用"].map((item, index) => (
-                  <li key={item} className="flex gap-3">
-                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#edf3ff] text-xs font-extrabold text-[#1e4fc8]">{index + 1}</span>
-                    <span className="pt-0.5">{item}</span>
-                  </li>
-                ))}
-              </ol>
-              <p className="mt-6 text-sm leading-6 text-[#526987]">这是试点设计，不是正在运行的系统。不自动向客户发送报价或消息。</p>
+            <aside className="rounded-3xl border border-white/15 bg-white p-6 text-[#182642] md:p-8" aria-label="品牌使命、愿景与主张">
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-sm font-extrabold text-[#1e4fc8]">品牌使命</h2>
+                  <p className="mt-2 text-base leading-7">{BRAND_MISSION}</p>
+                </div>
+                <div>
+                  <h2 className="text-sm font-extrabold text-[#1e4fc8]">品牌愿景</h2>
+                  <p className="mt-2 text-base leading-7">{BRAND_VISION}</p>
+                  <p className="mt-2 text-sm leading-6 text-[#526987]">{VISION_NOTE}</p>
+                </div>
+                <div>
+                  <h2 className="text-sm font-extrabold text-[#1e4fc8]">特色赋能</h2>
+                  <p className="mt-2 text-base leading-7">AI能力支持 + 政策红利挖掘</p>
+                </div>
+              </div>
             </aside>
           </div>
         </div>
 
-        <Section id="value" soft kicker="经营问题" title="增长卡住，常常出在这些环节" intro={PAIN_NOTE}>
-          <div className="grid gap-4 md:grid-cols-2">
-            {pains.map((item) => (
-              <article key={item.title} className="rounded-2xl border border-[#e4eaf4] bg-white p-6">
-                <h3 className="text-lg font-extrabold text-[#0c1832]">{item.title}</h3>
-                <p className="mt-2 text-sm leading-6 text-[#526987]">{item.text}</p>
-              </article>
+        <Section id="value" soft kicker="品牌叙事" title="发现下一门生意" intro={NARRATIVE[1]}>
+          <div className="max-w-3xl space-y-4">
+            {NARRATIVE.slice(2).map((item) => (
+              <p key={item} className="text-base leading-7 text-[#526987]">{item}</p>
             ))}
+            <p className="text-base font-semibold leading-7 text-[#0c1832]">{BRAND_SIGNATURE}</p>
           </div>
         </Section>
 
-        <Section id="services" kicker="服务内容" title="四项服务，从诊断做到持续使用" intro="合作围绕业务诊断、场景实施和持续优化。政策评估可以单选，不和AI服务绑在一起。">
-          <div className="grid gap-4 md:grid-cols-2">
-            {services.map((item, index) => (
+        <Section id="services" kicker="核心方法" title="六个环节，用来一起规划和陪跑" intro={METHOD_NOTE}>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {methods.map((item, index) => (
               <article key={item.title} className="rounded-2xl border border-[#e4eaf4] bg-white p-6">
                 <p className="text-sm font-extrabold text-[#1e4fc8]">0{index + 1}</p>
                 <h3 className="mt-2 text-lg font-extrabold text-[#0c1832]">{item.title}</h3>
@@ -260,10 +273,9 @@ export function HomePage() {
               </article>
             ))}
           </div>
-          <p className="mt-6 max-w-3xl text-sm leading-6 text-[#526987]">{SERVICE_NOTE}</p>
         </Section>
 
-        <Section id="pilot" soft kicker="建议首发" title={PILOT_TITLE} intro={PILOT_INTRO}>
+        <Section id="pilot" soft kicker="适用场景" title={PILOT_TITLE} intro={PILOT_INTRO}>
           <p className="mb-4 inline-flex rounded-full bg-[#edf3ff] px-3 py-1 text-sm font-bold text-[#1e4fc8]">{PILOT_STATUS}</p>
           <div className="overflow-hidden rounded-2xl border border-[#e4eaf4] bg-white">
             {pilotRows.map((row) => (
@@ -291,7 +303,7 @@ export function HomePage() {
           <p className="mt-6 max-w-3xl text-sm leading-6 text-[#526987]">{FREE_NOTE}</p>
         </Section>
 
-        <Section id="policy" soft kicker="可选服务" title="政策是助力，不是前提">
+        <Section id="policy" soft kicker="特色赋能" title="AI能力支持，政策红利挖掘" intro={ENABLEMENT_NOTE}>
           <div className="max-w-3xl space-y-4">
             {POLICY_PARAS.map((item) => (
               <p key={item} className="text-base leading-7 text-[#526987]">{item}</p>
@@ -392,8 +404,8 @@ export function HomePage() {
               <p className="mt-3 text-xs leading-5 text-[#526987]">请不要在上面填写税号、身份证、客户名单或价格明细。</p>
               {error ? <div className="mt-4" data-testid="growth-error"><Banner tone="error">{error}</Banner></div> : null}
               {result?.duplicate ? (
-                <p className="mt-4 rounded-xl bg-[#edf3ff] px-3 py-3 text-sm leading-6 text-[#1e4fc8]" data-testid="growth-duplicate" data-lead-id={result.id}>
-                  这个手机号今天已经提交过同类意向，编号 {result.id}。我们按原记录联系，没有重复建档。
+                <p className="mt-4 rounded-xl bg-[#edf3ff] px-3 py-3 text-sm leading-6 text-[#1e4fc8]" data-testid="growth-duplicate">
+                  这个手机号今天已经提交过同类意向。我们按原记录联系，没有重复建档。
                 </p>
               ) : null}
               {result && !result.duplicate ? (
@@ -428,6 +440,7 @@ export function HomePage() {
             {BRAND_NAME}
           </div>
           <p className="text-sm">{BRAND_TAGLINE}</p>
+          <p className="text-sm">{PUBLIC_SITE}</p>
           <p className="text-sm">
             <Link className="text-white" to="/legal/privacy">隐私政策</Link>
             <span> · </span>

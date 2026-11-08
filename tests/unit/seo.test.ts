@@ -78,7 +78,15 @@ describe("公开页 SEO", () => {
     expect(html).toContain('"@type":"WebSite"');
     expect(html).toContain("深圳市精灵探索科技有限公司");
     expect(html).toContain("企策AI增长");
+    expect(html).toContain("AI驱动企业价值重构与长期增长陪跑平台");
+    expect(html).toContain("发现向往 · 连接同频 · 重构商业 · 共创增长");
+    expect(html).toContain("企策AI增长，不只是帮助企业用AI把今天的生意做得更好，更重要的是，陪伴企业重新发现客户的向往，创造明天的新生意。");
+    expect(html).toContain("发现人的真实向往，激活企业潜在价值");
+    expect(html).toContain("让企业通过AI创造新的商业可能与第二增长曲线");
+    expect(html).not.toContain("用AI发现人的真实向往，激活企业潜在价值，创造新的商业可能。");
+    expect(html).not.toContain("让同频的人相遇，让有价值的商业自然生长。");
     expect(html).toContain("让AI真正进入业务，用可验证的改善支持企业增长。");
+    expect(html).not.toContain("同频匹配");
     expect(html).toContain("询价整理与报价辅助");
     expect(html).toContain("拟开放试点，需先确认适配，不是已经上线的成熟工具。");
     expect(html).toContain("不承诺金额、审批结果，也不承诺政府为AI采购买单。");

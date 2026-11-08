@@ -49,12 +49,14 @@ publicRoutes.post("/growth-leads", async (c) => {
   ).first<{ version: string }>();
   if (!privacy?.version) return c.json({ error: "隐私政策尚未发布，暂时不能提交" }, 503);
   const lead = parsed.value;
-  const key = growthDedupeKey(lead.phone, lead.intent, beijingDate());
-  const existing = await c.env.DB.prepare("SELECT id FROM growth_leads WHERE dedupe_key = ?").bind(key).first<{ id: string }>();
-  if (existing?.id) return c.json({ ok: true, id: existing.id, duplicate: true });
   const ip = clientIp(c.req.raw);
+  const burst = await hitLimit(c.env, `growth-lead:burst:${ip}`, 3, 60, false);
+  if (!burst) return c.json({ error: "提交太频繁，请一分钟后再试" }, 429);
   const allowed = await hitLimit(c.env, `growth-lead:${ip}`, 8, 3600, false);
   if (!allowed) return c.json({ error: "提交太频繁，请一小时后再试" }, 429);
+  const key = growthDedupeKey(lead.phone, lead.intent, beijingDate());
+  const existing = await c.env.DB.prepare("SELECT id FROM growth_leads WHERE dedupe_key = ?").bind(key).first<{ id: string }>();
+  if (existing?.id) return c.json({ ok: true, duplicate: true });
   const id = uid();
   const now = nowIso();
   const inserted = await c.env.DB.prepare(
@@ -68,7 +70,7 @@ publicRoutes.post("/growth-leads", async (c) => {
   if ((inserted.meta?.changes ?? 0) === 0) {
     const raced = await c.env.DB.prepare("SELECT id FROM growth_leads WHERE dedupe_key = ?").bind(key).first<{ id: string }>();
     if (!raced?.id) return c.json({ error: "提交没有保存，请稍后再试" }, 500);
-    return c.json({ ok: true, id: raced.id, duplicate: true });
+    return c.json({ ok: true, duplicate: true });
   }
   await audit(c.env.DB, null, "growth_lead.create", "growth_lead", id, ip);
   return c.json({ ok: true, id, duplicate: false });

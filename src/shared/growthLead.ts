@@ -1,5 +1,3 @@
-import { phoneError } from "./password";
-
 /** 官网首页增长意向。source 由服务端固定，调用方不能改来源。 */
 export const GROWTH_SOURCE = "homepage";
 export const GROWTH_SOURCE_LABEL = "官网首页";
@@ -39,6 +37,14 @@ function collapse(value: unknown): string {
   return String(value ?? "").replace(/\s+/g, " ").trim();
 }
 
+/** 去掉空格、短横线和 +86，只保留 1 开头的 11 位手机号，便于同一号码去重。 */
+export function normalizeMobile(input: unknown): string | null {
+  const digits = String(input ?? "").replace(/\D/g, "");
+  const local = digits.startsWith("86") && digits.length === 13 ? digits.slice(2) : digits;
+  if (!/^1\d{10}$/.test(local)) return null;
+  return local;
+}
+
 function lengthError(value: string, label: string, min: number, max: number): string | null {
   if (value.length < min || value.length > max) return `${label}需要 ${min}–${max} 个字`;
   return null;
@@ -60,7 +66,7 @@ export function growthSourceLabel(source: string): string {
 export function parseGrowthLead(input: GrowthLeadInput): { ok: true; value: GrowthLeadDraft } | { ok: false; error: string } {
   const company_name = collapse(input.company_name);
   const contact_name = collapse(input.contact_name);
-  const phone = collapse(input.phone);
+  const phone = normalizeMobile(input.phone) || "";
   const industry = collapse(input.industry);
   const pain = collapse(input.pain);
   const intent = collapse(input.intent);
@@ -68,8 +74,7 @@ export function parseGrowthLead(input: GrowthLeadInput): { ok: true; value: Grow
   if (companyError) return { ok: false, error: companyError };
   const contactError = lengthError(contact_name, "联系人", 2, 20);
   if (contactError) return { ok: false, error: contactError };
-  const phoneMsg = phoneError(phone);
-  if (phoneMsg) return { ok: false, error: phoneMsg };
+  if (!phone) return { ok: false, error: "请填写 11 位、1 开头的手机号" };
   const industryError = lengthError(industry, "行业", 2, 40);
   if (industryError) return { ok: false, error: industryError };
   if (!GROWTH_PAINS.includes(pain as (typeof GROWTH_PAINS)[number])) return { ok: false, error: "请选择主要痛点" };
