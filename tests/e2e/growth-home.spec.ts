@@ -124,6 +124,8 @@ test("官网首页增长意向可以保存，旧入口仍在", async ({ page, br
     headers: { "content-type": "application/json", "x-qice-request": "1" },
   });
   expect(anonPatch.status()).toBe(401);
+  const anonNotes = await page.request.get("/api/admin/growth-leads/not-a-lead/notes");
+  expect(anonNotes.status()).toBe(401);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
@@ -141,6 +143,13 @@ test("官网首页增长意向可以保存，旧入口仍在", async ({ page, br
   await page.getByTestId("login-password").fill("Admin1234");
   await page.getByTestId("login-submit").click();
   await expect(page.getByTestId("workspace-label")).toHaveText("管理员工作台", { timeout: 60_000 });
+  await page.goto("/admin");
+  await expect(page.getByTestId("todo-section-growth_leads")).toContainText("合成询价贸易有限公司");
+  await expect(page.getByTestId("todo-section-growth_leads")).toContainText("待联系");
+  await expect(page.getByTestId("todo-section-appointments")).not.toContainText("合成询价贸易有限公司");
+  await shot(page, "admin_todo_growth_lead", false);
+  await page.getByTestId("todo-section-growth_leads").getByRole("link", { name: "合成询价贸易有限公司" }).click();
+  await expect(page).toHaveURL(/\/admin\/growth-leads#/);
   await page.goto("/admin/growth-leads");
   const row = page.getByTestId("growth-lead-row").filter({ hasText: "合成询价贸易有限公司" });
   await expect(row).toHaveCount(1);
@@ -164,6 +173,8 @@ test("官网首页增长意向可以保存，旧入口仍在", async ({ page, br
   expect(badStatus.status()).toBe(400);
   await row.getByTestId("growth-lead-status").selectOption("已联系");
   await expect(row.getByTestId("growth-lead-status")).toHaveValue("已联系", { timeout: 20_000 });
+  await page.goto("/admin");
+  await expect(page.getByTestId("todo-section-growth_leads")).not.toContainText("合成询价贸易有限公司");
 
   const consultantKey = await deriveClientKey("13900002222", "Consult2234");
   const createdConsultant = await page.request.post("/api/admin/users", {
@@ -171,6 +182,7 @@ test("官网首页增长意向可以保存，旧入口仍在", async ({ page, br
     headers: { "content-type": "application/json", "x-qice-request": "1" },
   });
   expect(createdConsultant.status()).toBe(200);
+  const consultantId = ((await createdConsultant.json()) as { id: string }).id;
   const consultant = await browser.newContext();
   const consultantPage = await consultant.newPage();
   await consultantPage.goto("/login");
@@ -180,7 +192,52 @@ test("官网首页增长意向可以保存，旧入口仍在", async ({ page, br
   await expect(consultantPage.getByTestId("workspace-label")).toHaveText("顾问工作台", { timeout: 60_000 });
   await consultantPage.goto("/admin/growth-leads");
   await expect(consultantPage.getByTestId("growth-lead-row").filter({ hasText: "合成询价贸易有限公司" })).toHaveCount(1);
+  const consultantAssign = await consultantPage.request.patch(`/api/admin/growth-leads/${id}`, {
+    data: { assignee_id: consultantId },
+    headers: { "content-type": "application/json", "x-qice-request": "1" },
+  });
+  expect(consultantAssign.status()).toBe(403);
   await consultant.close();
+
+  const assigned = await page.request.patch(`/api/admin/growth-leads/${id}`, {
+    data: { assignee_id: consultantId },
+    headers: { "content-type": "application/json", "x-qice-request": "1" },
+  });
+  expect(assigned.status()).toBe(200);
+  await page.goto("/admin/growth-leads");
+  await expect(row.getByTestId("growth-lead-assignee")).toHaveValue(consultantId);
+  await row.getByTestId("growth-note").fill("已电话说明范围");
+  await row.getByTestId("growth-note-save").click();
+  await expect(row.getByTestId("growth-note-item")).toContainText("已电话说明范围");
+  await page.reload();
+  await expect(row.getByTestId("growth-note-item")).toContainText("已电话说明范围");
+  await expect(row.getByTestId("growth-lead-assignee")).toHaveValue(consultantId);
+  await row.getByTestId("growth-follow-up").fill("2026-12-01T10:00");
+  await row.getByTestId("growth-follow-up-save").click();
+  await page.reload();
+  await expect(row.getByTestId("growth-follow-up")).toHaveValue("2026-12-01T10:00");
+  await shot(page, "admin_growth_lead_followup", false);
+  const due = await page.request.patch(`/api/admin/growth-leads/${id}`, {
+    data: { next_follow_up_at: "2026-11-01T09:00" },
+    headers: { "content-type": "application/json", "x-qice-request": "1" },
+  });
+  expect(due.status()).toBe(200);
+  await page.goto("/admin");
+  await expect(page.getByTestId("todo-section-growth_leads")).toContainText("到期跟进");
+  const later = await page.request.patch(`/api/admin/growth-leads/${id}`, {
+    data: { next_follow_up_at: "2027-01-01T09:00" },
+    headers: { "content-type": "application/json", "x-qice-request": "1" },
+  });
+  expect(later.status()).toBe(200);
+  await page.reload();
+  await expect(page.getByTestId("todo-section-growth_leads")).not.toContainText("合成询价贸易有限公司");
+  const shelved = await page.request.patch(`/api/admin/growth-leads/${id}`, {
+    data: { status: "已搁置", next_follow_up_at: "2026-11-01T09:00" },
+    headers: { "content-type": "application/json", "x-qice-request": "1" },
+  });
+  expect(shelved.status()).toBe(200);
+  await page.reload();
+  await expect(page.getByTestId("todo-section-growth_leads")).not.toContainText("合成询价贸易有限公司");
 
   const enterprise = await browser.newContext();
   const enterprisePage = await enterprise.newPage();
@@ -199,6 +256,11 @@ test("官网首页增长意向可以保存，旧入口仍在", async ({ page, br
     headers: { "content-type": "application/json", "x-qice-request": "1" },
   });
   expect(deniedWrite.status()).toBe(403);
+  const deniedNote = await enterprisePage.request.post(`/api/admin/growth-leads/${id}/notes`, {
+    data: { body: "企业不该写入" },
+    headers: { "content-type": "application/json", "x-qice-request": "1" },
+  });
+  expect(deniedNote.status()).toBe(403);
   await enterprise.close();
 
   await page.goto("/admin/enterprises");

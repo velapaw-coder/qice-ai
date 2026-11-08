@@ -96,3 +96,65 @@ export function growthStatusError(status: string): string | null {
 export function growthDedupeKey(phone: string, intent: string, day: string): string {
   return `${phone}|${intent}|${GROWTH_SOURCE}|${day}`;
 }
+
+export type GrowthLeadTodoKind = "待联系" | "到期跟进";
+
+/**
+ * 待联系一直留在待办。已联系只在下次跟进时间已到时出现。
+ * 搁置不进入待办。未填下次跟进的已联系也不催。
+ * nowIso 与 next_follow_up_at 都用 UTC ISO，字符串可直接比较。
+ */
+export function growthLeadTodoKind(
+  status: string,
+  nextFollowUpAt: string | null | undefined,
+  nowIso: string,
+): GrowthLeadTodoKind | null {
+  if (status === "待联系") return "待联系";
+  if (status === "已联系" && nextFollowUpAt && nextFollowUpAt <= nowIso) return "到期跟进";
+  return null;
+}
+
+/** 把 datetime-local 的北京时间换成 UTC ISO。空值表示清空。 */
+export function parseShanghaiDateTime(input: unknown): { ok: true; value: string | null } | { ok: false; error: string } {
+  if (input == null || input === "") return { ok: true, value: null };
+  const text = String(input).trim();
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  if (!match) return { ok: false, error: "下次跟进时间请用北京时间，精确到分钟" };
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  if (year < 2024 || year > 2100) return { ok: false, error: "下次跟进时间超出可记录范围" };
+  if (month < 1 || month > 12 || hour > 23 || minute > 59) return { ok: false, error: "下次跟进时间不正确" };
+  const utc = new Date(Date.UTC(year, month - 1, day, hour - 8, minute, 0, 0));
+  if (Number.isNaN(utc.getTime())) return { ok: false, error: "下次跟进时间不正确" };
+  const back = shanghaiLocalInput(utc.toISOString());
+  if (back !== text) return { ok: false, error: "下次跟进时间不正确" };
+  return { ok: true, value: utc.toISOString() };
+}
+
+/** UTC ISO 转成 datetime-local 需要的北京时间。 */
+export function shanghaiLocalInput(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(iso));
+  const pick = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value || "";
+  if (!pick("year")) return "";
+  const hour = pick("hour") === "24" ? "00" : pick("hour").padStart(2, "0");
+  return `${pick("year")}-${pick("month")}-${pick("day")}T${hour}:${pick("minute")}`;
+}
+
+export function growthNoteError(body: unknown): string | null {
+  const text = String(body ?? "").trim();
+  if (!text) return "请填写跟进备注";
+  if (text.length > 1000) return "跟进备注最多 1000 字";
+  return null;
+}

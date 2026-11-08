@@ -217,6 +217,7 @@ function useData<T>(path: string) {
 }
 
 function todoHref(key: string, row: Record<string, string>) {
+  if (key === "growth_leads") return `/admin/growth-leads#${row.id}`;
   if (key === "drafts") return `/admin/policy-drafts/${row.id}`;
   if (key === "expiring") return `/admin/policies/${row.id}`;
   return `/admin/enterprises/${row.enterprise_id || row.id}`;
@@ -236,7 +237,7 @@ function Todos() {
   const visible = focused ? [focused] : data.groups;
   return (
     <div className="space-y-4" data-testid="admin-home">
-      <PageHeader kicker="工作台" title="待办" description="先处理待复核和企业预约，再看补传、草稿和即将到期的规则。" />
+      <PageHeader kicker="工作台" title="待办" description="增长线索与已注册企业的预约分开。待联系要处理；已联系只在下次跟进到期时出现；搁置不进入待办。" />
       {focused ? <p className="text-sm text-muted" data-testid="todo-focus">正在查看：{focused.title}</p> : <p className="text-sm text-muted" data-testid="todo-focus">正在查看全部待办</p>}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
         {data.groups.map((group) => (

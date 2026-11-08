@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { homeArticleHtml } from "../../src/shared/growthHome";
-import { growthDedupeKey, growthSourceLabel, growthStatusError, normalizeMobile, parseGrowthLead } from "../../src/shared/growthLead";
+import { growthDedupeKey, growthLeadTodoKind, growthNoteError, growthSourceLabel, growthStatusError, normalizeMobile, parseGrowthLead, parseShanghaiDateTime, shanghaiLocalInput } from "../../src/shared/growthLead";
 
 const valid = {
   company_name: "合成询价贸易有限公司",
@@ -33,6 +33,30 @@ describe("增长意向", () => {
     expect(normalizeMobile("23900001111")).toBeNull();
     expect(normalizeMobile("12345")).toBeNull();
     expect(growthDedupeKey("13900001111", "growth_talk", "20261108")).toBe(growthDedupeKey("13900001111", "growth_talk", "20261108"));
+  });
+
+  it("待办区分待联系、到期跟进和搁置", () => {
+    const now = "2026-11-08T02:00:00.000Z";
+    expect(growthLeadTodoKind("待联系", null, now)).toBe("待联系");
+    expect(growthLeadTodoKind("待联系", "2026-11-09T00:00:00.000Z", now)).toBe("待联系");
+    expect(growthLeadTodoKind("已联系", null, now)).toBeNull();
+    expect(growthLeadTodoKind("已联系", "2026-11-08T03:00:00.000Z", now)).toBeNull();
+    expect(growthLeadTodoKind("已联系", "2026-11-08T01:00:00.000Z", now)).toBe("到期跟进");
+    expect(growthLeadTodoKind("已搁置", "2026-11-08T01:00:00.000Z", now)).toBeNull();
+  });
+
+  it("北京时间精确到分钟并转成 UTC", () => {
+    const parsed = parseShanghaiDateTime("2026-11-09T09:30");
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.value).toBe("2026-11-09T01:30:00.000Z");
+    expect(shanghaiLocalInput(parsed.value)).toBe("2026-11-09T09:30");
+    const cleared = parseShanghaiDateTime("");
+    expect(cleared.ok).toBe(true);
+    if (cleared.ok) expect(cleared.value).toBeNull();
+    expect(parseShanghaiDateTime("2026-02-31T10:00").ok).toBe(false);
+    expect(growthNoteError("  ")).toMatch(/备注/);
+    expect(growthNoteError("已电话联系")).toBeNull();
   });
 
   it("状态只接受待联系、已联系、已搁置", () => {
