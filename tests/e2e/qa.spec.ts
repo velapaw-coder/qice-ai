@@ -606,7 +606,7 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
       const response = await adminPage.request.get(path);
       expect(response.status(), path).not.toBe(404);
     }
-    for (const file of ["src/client/pages/AdminApp.tsx", "src/client/pages/EnterpriseApp.tsx", "src/client/home/markup.ts", "src/client/pages/AuthPages.tsx"]) {
+    for (const file of ["src/client/pages/AdminApp.tsx", "src/client/pages/EnterpriseApp.tsx", "src/client/pages/HomePage.tsx", "src/client/pages/AuthPages.tsx"]) {
       expect(readFileSync(file, "utf8")).not.toContain('href="#"');
     }
   } finally {

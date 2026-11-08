@@ -290,6 +290,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "crawl.start": "发起抓取",
   "appointment.create": "提交预约",
   "appointment.update": "更新预约",
+  "growth_lead.create": "提交增长意向",
+  "growth_lead.update": "更新增长意向",
   "privacy.revoke": "撤回授权",
   "privacy.delete_request": "申请删除资料",
 };

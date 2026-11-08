@@ -11,6 +11,7 @@ import { formatRange } from "@shared/rules/evaluate";
 import { api } from "../lib/api";
 import { Banner, BrandMark, Button, Card, EmptyState, Input, Label, PageHeader, StatCard, Textarea, TierBadge } from "../components/ui";
 import { ChangePasswordPage, SelfPasswordForm } from "./AuthPages";
+import { GrowthLeadsPage } from "./GrowthLeadsPage";
 import { StaffProfile, StaffTicketList, TicketThread } from "./serviceDesk";
 
 const filterSelect = "app-select min-w-[9.5rem] shrink-0 rounded-[11px] border border-[#d8e1ef] bg-white px-3 text-[15px] text-ink";
@@ -20,6 +21,7 @@ const groups = [
     { to: "/admin", label: "待办", icon: "▣", end: true },
     { to: "/admin/enterprises", label: "企业", icon: "◎" },
     { to: "/admin/tickets", label: "工单", icon: "✉" },
+    { to: "/admin/growth-leads", label: "增长意向", icon: "◈" },
   ]},
   { label: "成交", items: [
     { to: "/admin/deals/policy", label: "政策线", icon: "▤" },
@@ -144,7 +146,7 @@ export function AdminApp() {
             <button type="button" className="mt-2 whitespace-nowrap text-sm font-semibold text-[#d5e2f7] hover:text-white" data-testid="admin-logout" onClick={logout}>退出登录</button>
           </div>
         </aside>
-        <main className="min-h-0 flex-1 overflow-y-auto text-[15px]">
+        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto text-[15px]">
         <div className="mx-auto w-full max-w-[1440px] px-4 py-5">
         <RoleContext.Provider value={me.user.role}>
         <FeedbackContext.Provider value={setFeedback}>
@@ -167,6 +169,7 @@ export function AdminApp() {
           <Route path="settings" element={<Settings />} />
           <Route path="profile" element={<StaffProfile />} />
           <Route path="tickets" element={<StaffTicketList />} />
+          <Route path="growth-leads" element={<GrowthLeadsPage />} />
           <Route path="tickets/:id" element={<TicketThread base="/admin" />} />
           <Route path="password" element={<MyPassword />} />
           <Route path="change-password" element={<ChangePasswordPage next="/admin" />} />

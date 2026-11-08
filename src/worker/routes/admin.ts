@@ -13,6 +13,7 @@ import { decryptSecret, encryptSecret } from "../crypto";
 import { closeStaleCrawlRuns, enqueueCrawl, importTextDraft, joinUrl } from "../crawl";
 import { getEnterprise, loadEvalProfile, profileMap, runMatch, setStatus } from "../match";
 import { consentFailure, withUploadConsent } from "../consent";
+import { growthStatusError } from "../../shared/growthLead";
 import { audit, beijingDate, clientIp, contentDisposition, hitLimit, notifyWecom, nowIso, readJson, requireStaff, setting, uid, type AppEnv } from "../util";
 
 export const adminRoutes = new Hono<AppEnv>();
@@ -684,6 +685,30 @@ adminRoutes.patch("/admin/appointments/:id", async (c) => {
   const body = await readJson<{ status?: string }>(c.req.raw);
   if (!body?.status || !["待联系", "已联系", "已取消"].includes(body.status)) return c.json({ error: "状态不正确" }, 400);
   await c.env.DB.prepare("UPDATE appointments SET status = ?, handled_by = ?, handled_at = ? WHERE id = ?").bind(body.status, c.get("userId"), nowIso(), c.req.param("id")).run();
+  return c.json({ ok: true });
+});
+
+adminRoutes.get("/admin/growth-leads", async (c) => {
+  const rows = await c.env.DB.prepare(
+    `SELECT id, source, intent, company_name, contact_name, phone, industry, pain, status, created_at
+     FROM growth_leads ORDER BY created_at DESC LIMIT 100`,
+  ).all();
+  return c.json({ leads: rows.results || [] });
+});
+
+adminRoutes.patch("/admin/growth-leads/:id", async (c) => {
+  const body = await readJson<{ status?: string }>(c.req.raw);
+  const status = body?.status || "";
+  const problem = growthStatusError(status);
+  if (problem) return c.json({ error: problem }, 400);
+  const id = c.req.param("id");
+  const updated = await c.env.DB.prepare(
+    "UPDATE growth_leads SET status = ?, handled_by = ?, handled_at = ? WHERE id = ?",
+  )
+    .bind(status, c.get("userId"), nowIso(), id)
+    .run();
+  if ((updated.meta?.changes ?? 0) === 0) return c.json({ error: "没有这条意向" }, 404);
+  await audit(c.env.DB, c.get("userId"), "growth_lead.update", "growth_lead", id, clientIp(c.req.raw));
   return c.json({ ok: true });
 });
 

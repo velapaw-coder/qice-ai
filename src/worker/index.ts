@@ -87,6 +87,7 @@ function isPublic(path: string, method: string): boolean {
   if (path.startsWith("/api/legal/")) return method === "GET";
   if (path === "/api/auth/contact") return true;
   if (path === "/api/auth/register" || path === "/api/auth/login") return method === "POST";
+  if (path === "/api/growth-leads") return method === "POST";
   return false;
 }
 

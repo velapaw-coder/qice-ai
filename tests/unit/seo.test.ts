@@ -8,6 +8,8 @@ import {
   ROBOTS_CONTENT_TYPE,
   SITEMAP_CONTENT_TYPE,
   SITE,
+  SITE_DESCRIPTION,
+  SITE_TITLE,
   canonicalFor,
   cookieShouldBeSecure,
   decorateHtml,
@@ -23,8 +25,8 @@ const shell = `<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <title>企策AI｜企业政策优惠与AI智能化升级服务平台</title>
-    <meta name="description" content="企策AI提供企业政策优惠初步评估、专业申报协助与AI FDE智能化升级服务。" />
+    <title>${SITE_TITLE}</title>
+    <meta name="description" content="${SITE_DESCRIPTION}" />
   </head>
   <body>
     <div id="root"></div>
@@ -75,10 +77,20 @@ describe("公开页 SEO", () => {
     expect(html).toContain('"@type":"Organization"');
     expect(html).toContain('"@type":"WebSite"');
     expect(html).toContain("深圳市精灵探索科技有限公司");
-    expect(html).toContain("让政策红利助力企业 AI升级");
-    expect(html).toContain("从政策优惠到AI增效，一站式协同服务");
-    expect(html).toContain("员工超过10人就一定能获得补贴吗？");
-    expect(html).toContain("不能。10人以上只是本平台的业务初筛标准。");
+    expect(html).toContain("企策AI增长");
+    expect(html).toContain("让AI真正进入业务，用可验证的改善支持企业增长。");
+    expect(html).toContain("询价整理与报价辅助");
+    expect(html).toContain("拟开放试点，需先确认适配，不是已经上线的成熟工具。");
+    expect(html).toContain("不承诺金额、审批结果，也不承诺政府为AI采购买单。");
+    expect(html).not.toContain("让政策红利");
+    expect(html).not.toContain("10人以上");
+    expect(html).toContain("这里不承诺固定天数、免费三年，提交后也不会自动开通。");
+    expect(html).not.toContain("员工超过10人就一定能获得补贴吗？");
+    const indexHtml = readFileSync("index.html", "utf8");
+    expect(indexHtml).toContain(`<title>${SITE_TITLE}</title>`);
+    expect(indexHtml).toContain(`content="${SITE_DESCRIPTION}"`);
+    expect(indexHtml).not.toContain("企业政策优惠");
+    expect(indexHtml).not.toContain("让政策红利");
     expect(html).toContain('id="qice-seo"');
     expect(html).toContain('getElementById("qice-seo")');
     expect(html.match(/rel="canonical"/g)).toHaveLength(1);
@@ -92,7 +104,7 @@ describe("公开页 SEO", () => {
       expect(shouldNoindex(path)).toBe(true);
       expect(html).toContain('name="robots" content="noindex, nofollow"');
       expect(html).toContain(`rel="canonical" href="https://qicego.com${path}"`);
-      expect(html).not.toContain("员工超过10人就一定能获得补贴吗？");
+      expect(html).not.toContain("询价整理与报价辅助");
       expect(html).not.toContain("og:image");
       expect(html).not.toContain("google-site-verification");
       expect(documentHeaders(path)["x-robots-tag"]).toBe("noindex, nofollow");
@@ -110,7 +122,7 @@ describe("公开页 SEO", () => {
     const unknown = decorateHtml(shell, "/legal/other");
     expect(shouldNoindex("/legal/other")).toBe(true);
     expect(unknown).toContain("noindex");
-    expect(unknown).not.toContain("让政策红利");
+    expect(unknown).not.toContain("询价整理与报价辅助");
   });
 
   it("旧主机名 301 到 qicego.com，并保留路径和查询", () => {

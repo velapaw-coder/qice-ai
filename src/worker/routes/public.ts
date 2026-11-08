@@ -1,7 +1,9 @@
 import { Hono } from "hono";
+import { GROWTH_SOURCE, growthDedupeKey, parseGrowthLead, type GrowthLeadInput } from "../../shared/growthLead";
 import { deriveClientKey, passwordError, phoneError, serverPasswordHash } from "../../shared/password";
 import {
   audit,
+  beijingDate,
   clearCookie,
   clientIp,
   cookie,
@@ -34,6 +36,42 @@ publicRoutes.get("/auth/contact", async (c) => {
   const phone = await c.env.DB.prepare("SELECT value FROM settings WHERE key = 'consultant_phone'").first<{ value: string }>();
   const wechat = await c.env.DB.prepare("SELECT value FROM settings WHERE key = 'consultant_wechat'").first<{ value: string }>();
   return c.json({ phone: phone?.value || "", wechat: wechat?.value || "" });
+});
+
+publicRoutes.post("/growth-leads", async (c) => {
+  const body = await readJson<GrowthLeadInput & { company_website?: string }>(c.req.raw);
+  if (!body) return c.json({ error: "请求无法读取" }, 400);
+  if (body.company_website) return c.json({ error: "提交无效" }, 400);
+  const parsed = parseGrowthLead(body);
+  if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+  const privacy = await c.env.DB.prepare(
+    "SELECT version FROM consent_templates WHERE kind = 'privacy' ORDER BY effective_at DESC LIMIT 1",
+  ).first<{ version: string }>();
+  if (!privacy?.version) return c.json({ error: "隐私政策尚未发布，暂时不能提交" }, 503);
+  const lead = parsed.value;
+  const key = growthDedupeKey(lead.phone, lead.intent, beijingDate());
+  const existing = await c.env.DB.prepare("SELECT id FROM growth_leads WHERE dedupe_key = ?").bind(key).first<{ id: string }>();
+  if (existing?.id) return c.json({ ok: true, id: existing.id, duplicate: true });
+  const ip = clientIp(c.req.raw);
+  const allowed = await hitLimit(c.env, `growth-lead:${ip}`, 8, 3600, false);
+  if (!allowed) return c.json({ error: "提交太频繁，请一小时后再试" }, 429);
+  const id = uid();
+  const now = nowIso();
+  const inserted = await c.env.DB.prepare(
+    `INSERT INTO growth_leads (
+      id, source, intent, company_name, contact_name, phone, industry, pain, consent_version, status, dedupe_key, ip, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '待联系', ?, ?, ?)
+    ON CONFLICT(dedupe_key) DO NOTHING`,
+  )
+    .bind(id, GROWTH_SOURCE, lead.intent, lead.company_name, lead.contact_name, lead.phone, lead.industry, lead.pain, privacy.version, key, ip, now)
+    .run();
+  if ((inserted.meta?.changes ?? 0) === 0) {
+    const raced = await c.env.DB.prepare("SELECT id FROM growth_leads WHERE dedupe_key = ?").bind(key).first<{ id: string }>();
+    if (!raced?.id) return c.json({ error: "提交没有保存，请稍后再试" }, 500);
+    return c.json({ ok: true, id: raced.id, duplicate: true });
+  }
+  await audit(c.env.DB, null, "growth_lead.create", "growth_lead", id, ip);
+  return c.json({ ok: true, id, duplicate: false });
 });
 
 publicRoutes.post("/auth/register", async (c) => {
