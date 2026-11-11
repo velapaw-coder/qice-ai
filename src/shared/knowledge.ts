@@ -39,6 +39,12 @@ export type KnowledgeSource = {
   url?: string;
 };
 
+export type KnowledgeUncheckedEntry = {
+  title: string;
+  url: string;
+  note: string;
+};
+
 export type KnowledgeArticle = {
   slug: string;
   category: KnowledgeCategorySlug;
@@ -46,7 +52,9 @@ export type KnowledgeArticle = {
   description: string;
   reviewState: "draft" | "listed" | "published";
   /** 文章自己的核对状态。窗口需确认不能显示成当前依据已核实。 */
-  contentStatus: "当前依据核实" | "窗口需确认" | null;
+  contentStatus: "当前依据核实" | "窗口需确认" | "依据核实、受理窗口待确认" | null;
+  /** 办理入口访问未核，不能与已核实来源混在一起。 */
+  uncheckedEntries: KnowledgeUncheckedEntry[];
   /** 编辑核对日。不是法律法规的官方发布日期，也不当作文章发布日期。 */
   checkedAt: string;
   /** 没有单独的发布日期时保持为空，不用核对日顶替。 */
@@ -138,8 +146,13 @@ export function knowledgeArticleError(article: KnowledgeArticle): string | null 
   } else {
     return "稿件状态不正确";
   }
-  if (article.reviewState === "listed" && article.contentStatus !== "当前依据核实" && article.contentStatus !== "窗口需确认") {
-    return "上线文章要标明当前依据核实或窗口需确认";
+  if (article.reviewState === "listed" && article.contentStatus !== "当前依据核实" && article.contentStatus !== "窗口需确认" && article.contentStatus !== "依据核实、受理窗口待确认") {
+    return "上线文章要标明核对状态";
+  }
+  for (const entry of article.uncheckedEntries || []) {
+    if (!entry.note.includes("未核")) return "未核验入口必须标明访问未核";
+    const problem = sourceError(entry);
+    if (problem) return problem;
   }
   if (!article.sources.length) return "文章至少要有一条来源";
   for (const source of article.sources) {
@@ -348,6 +361,7 @@ export function renderKnowledgeHtml(model: KnowledgeModel): string {
       if (block.type === "list") return `<ul>${block.items.map((item) => `<li>${esc(item)}</li>`).join("")}</ul>`;
       return `<p>${esc(block.text)}</p>`;
     }).join("");
+    const unchecked = (article.uncheckedEntries || []).map((entry) => `<li><a href="${esc(entry.url)}">${esc(entry.title)}</a>（${esc(entry.note)}）</li>`).join("");
     const sources = article.sources.map((source) => {
       const label = source.name && source.name !== source.title ? `${source.name}：${source.title}` : source.title;
       const text = `${label}${source.identifier ? `（${source.identifier}）` : ""}`;
@@ -360,6 +374,7 @@ export function renderKnowledgeHtml(model: KnowledgeModel): string {
       facts,
       body,
       `<h2>来源</h2><ul>${sources}</ul>`,
+      unchecked ? `<h2>办理入口（访问未核）</h2><p>下列地址不是已核实的法规来源，也不据此判断当地金额或是否正在受理。</p><ul>${unchecked}</ul>` : "",
       related ? `<h2>相关文章</h2><ul>${related}</ul>` : "",
       `<p>${esc(BOUNDARY)}</p>`,
       `<p><a href="/#contact">预约增长交流</a></p>`,

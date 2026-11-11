@@ -65,11 +65,26 @@ test("九篇知识文章可阅读，状态和核对日分开，站点地图只�
   await page.goto("/knowledge/not-a-category");
   await expect(page.getByTestId("knowledge-missing")).toBeVisible();
 
+  await page.goto("/knowledge/subsidy/one-time-expansion-employment-subsidy-2026");
+  await expect(page.getByTestId("knowledge-facts")).toContainText("依据核实、受理窗口待确认");
+  await expect(page.getByText("不是各地统一按1500元发放")).toBeVisible();
+  await expect(page.getByText("粤人社发〔2026〕20号与粤人社规〔2026〕20号不是同一份文件")).toBeVisible();
+  await expect(page.getByRole("link", { name: "粤人社发〔2026〕20号（广东省人力资源和社会保障厅）" })).toHaveAttribute("href", "https://hrss.gd.gov.cn/zwgk/xxgkml/bmwj/qtwj/shbz/content/post_4949419.html");
+  await expect(page.getByTestId("knowledge-unchecked")).toContainText("访问未核");
+  await shot(page, "knowledge_subsidy_batch2");
+  await page.goto("/knowledge?q=灵活就业");
+  await expect(page.getByRole("link", { name: "就业困难人员和毕业生灵活就业，个人社保补贴如何计算上限" })).toBeVisible();
+  await page.goto("/knowledge?q=没有这回事的补贴");
+  await expect(page.getByTestId("knowledge-empty")).toBeVisible();
+  await expect(page.getByText("南山专区")).toHaveCount(0);
+
   const sitemap = await page.request.get("/sitemap.xml");
   const xml = await sitemap.text();
   expect(xml).toContain("https://qicego.com/knowledge</loc>");
   expect(xml).toContain("https://qicego.com/knowledge/subsidy/key-group-employment-tax-incentive</loc>");
   expect(xml).toContain("https://qicego.com/knowledge/ip/trademark-registration-basics</loc>");
+  expect(xml).toContain("https://qicego.com/knowledge/subsidy/one-time-expansion-employment-subsidy-2026</loc>");
+  expect(xml).not.toContain("/knowledge/nanshan");
   expect(xml).not.toContain("/admin");
   const verify = await page.request.get("/googled5c7c4e254bd8e0c.html");
   expect(verify.status()).toBe(200);

@@ -59,7 +59,9 @@ describe("公开页 SEO", () => {
     expect(xml).toContain("<loc>https://qicego.com/knowledge/subsidy/key-group-employment-tax-incentive</loc>");
     expect(xml).toContain("<loc>https://qicego.com/knowledge/subsidy/enterprise-subsidy-self-check</loc>");
     expect(xml).toContain("<loc>https://qicego.com/knowledge/ip/trademark-registration-basics</loc>");
-    expect(xml.match(/<loc>/g)).toHaveLength(4 + 1 + 3 + 9);
+    expect(xml).toContain("<loc>https://qicego.com/knowledge/subsidy/one-time-expansion-employment-subsidy-2026</loc>");
+    expect(xml).not.toContain("/knowledge/nanshan");
+    expect(xml.match(/<loc>/g)).toHaveLength(4 + 1 + 3 + 20);
     expect(xml).not.toContain("goqice.com");
     expect(xml).not.toContain("/login");
     expect(xml).not.toContain("/register");

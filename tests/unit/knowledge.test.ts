@@ -41,6 +41,7 @@ function article(overrides: Partial<KnowledgeArticle> = {}): KnowledgeArticle {
     validityNote: "只在测试数据里有效",
     applicationWindow: "测试窗口不对外办理",
     sources: [{ name: "合成机关", title: "合成文件", identifier: "合成〔2026〕1号" }],
+    uncheckedEntries: [],
     blocks: [
       { type: "paragraph", text: "这段合成正文只存在于单元测试，用来确认转义、列表、搜索和字段展示。它不会进入已发布目录，也不能当成真实补助、工商或知识产权文章，更不能拿去对外发布。" },
       { type: "list", items: ["先看地区", "再看有效期"] },
@@ -151,14 +152,14 @@ describe("企业服务知识库", () => {
   });
 
   it("九篇复核稿可公开阅读，核对日不写成发布日期", () => {
-    expect(publicKnowledge).toHaveLength(9);
+    expect(publicKnowledge).toHaveLength(20);
     expect(publishedKnowledge).toHaveLength(0);
     const paths = knowledgeSitemapPaths(publicKnowledge);
     expect(paths).toContain("/knowledge");
     expect(paths).toContain("/knowledge/subsidy");
     expect(paths).toContain("/knowledge/business");
     expect(paths).toContain("/knowledge/ip");
-    expect(paths.filter((path) => path.split("/").length === 4)).toHaveLength(9);
+    expect(paths.filter((path) => path.split("/").length === 4)).toHaveLength(20);
     const statuses = Object.fromEntries(publicKnowledge.map((item) => [item.slug, item.contentStatus]));
     expect(statuses["enterprise-subsidy-self-check"]).toBe("窗口需确认");
     expect(statuses["trademark-registration-basics"]).toBe("当前依据核实");
@@ -190,5 +191,31 @@ describe("企业服务知识库", () => {
     const found = resolveKnowledge("/knowledge", "?q=加计扣除", publicKnowledge);
     expect(found?.articles.map((item) => item.slug)).toEqual(["rd-expense-super-deduction"]);
     expect(found?.indexable).toBe(false);
+    const batch2 = publicKnowledge.filter((item) => item.contentStatus === "依据核实、受理窗口待确认");
+    expect(batch2).toHaveLength(11);
+    expect(publicKnowledge.filter((item) => item.contentStatus === "当前依据核实")).toHaveLength(8);
+    expect(publicKnowledge.filter((item) => item.contentStatus === "窗口需确认")).toHaveLength(1);
+    const expansion = publicKnowledge.find((item) => item.slug === "one-time-expansion-employment-subsidy-2026");
+    expect(expansion?.category).toBe("subsidy");
+    const expansionText = expansion?.blocks.map((block) => (block.type === "paragraph" ? block.text : "")).join("\n") || "";
+    expect(expansionText).toContain("粤人社发〔2026〕20号");
+    expect(expansion?.validityNote).toContain("粤人社发〔2026〕20号与粤人社规〔2026〕20号不是同一份文件");
+    expect(expansionText).toContain("不是各地统一按1500元发放");
+    expect(expansionText).not.toContain("深圳实际拨付标准");
+    expect(expansion?.sources.map((source) => source.url)).toEqual([
+      "https://www.gov.cn/zhengce/zhengceku/202607/content_7074139.htm",
+      "https://www.gov.cn/gongbao/2026/issue_12966/202609/content_7080503.html",
+      "https://hrss.gd.gov.cn/zwgk/xxgkml/bmwj/qtwj/shbz/content/post_4949419.html",
+    ]);
+    expect(expansion?.uncheckedEntries).toHaveLength(2);
+    expect(expansion?.uncheckedEntries.every((entry) => entry.note.includes("未核"))).toBe(true);
+    expect(publicKnowledge.some((item) => /残疾|培训补贴/.test(item.title))).toBe(false);
+    expect(resolveKnowledge("/knowledge", "?q=没有这回事的补贴", publicKnowledge)?.articles).toEqual([]);
+    const expansionHtml = decorateKnowledgeHtml(shell, resolveKnowledge("/knowledge/subsidy/one-time-expansion-employment-subsidy-2026", "", publicKnowledge)!);
+    expect(expansionHtml).toContain("核对状态：依据核实、受理窗口待确认");
+    expect(expansionHtml).toContain('href="https://hrss.gd.gov.cn/zwgk/xxgkml/bmwj/qtwj/shbz/content/post_4949419.html"');
+    expect(expansionHtml).toContain("办理入口（访问未核）");
+    expect(expansionHtml).not.toContain('"datePublished"');
+    expect(expansionHtml).not.toContain("/knowledge-base/");
   });
 });

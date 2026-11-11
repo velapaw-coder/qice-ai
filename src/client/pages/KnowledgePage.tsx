@@ -63,6 +63,7 @@ export function KnowledgePage() {
                 <Button type="submit" variant="outline">搜索</Button>
               </form>
             ) : null}
+            <p className="mt-4 text-sm text-[#3e4e68]" data-testid="knowledge-count">共 {model.articles.length} 篇</p>
             {model.articles.length === 0 ? (
               <p className="mt-6 text-base" data-testid="knowledge-empty">{knowledgeEmptyLabel(model)}</p>
             ) : (
@@ -71,7 +72,7 @@ export function KnowledgePage() {
                   <li key={article.slug}>
                     <Link className="font-bold text-[#1e4fc8]" to={`/knowledge/${article.category}/${article.slug}`}>{article.title}</Link>
                     {article.contentStatus ? <p className="mt-1 text-sm font-bold text-[#0c1832]" data-testid="knowledge-status">{article.contentStatus}</p> : null}
-                    <p className="mt-1 text-sm leading-6 text-[#3e4e68]">{article.description}</p>
+                    <p className="mt-1 line-clamp-2 text-sm leading-6 text-[#3e4e68]">{article.description}</p>
                   </li>
                 ))}
               </ul>
@@ -109,6 +110,17 @@ function ArticleView({ article, related }: { article: KnowledgeArticle; related:
           return <li key={label}>{source.url ? <a className="font-semibold text-[#1e4fc8]" href={source.url}>{label}</a> : label}</li>;
         })}
       </ul>
+      {article.uncheckedEntries.length ? (
+        <>
+          <h2 className="mt-8 text-lg font-extrabold text-[#0c1832]">办理入口（访问未核）</h2>
+          <p className="mt-2 text-sm leading-6 text-[#3e4e68]">下列地址不是已核实的法规来源，也不据此判断当地金额或是否正在受理。</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6" data-testid="knowledge-unchecked">
+            {article.uncheckedEntries.map((entry) => (
+              <li key={entry.url}><a className="font-semibold text-[#1e4fc8]" href={entry.url}>{entry.title}</a>（{entry.note}）</li>
+            ))}
+          </ul>
+        </>
+      ) : null}
       {related.length ? (
         <>
           <h2 className="mt-8 text-lg font-extrabold text-[#0c1832]">相关文章</h2>

@@ -1,4 +1,5 @@
 import packageJson from "./knowledge-drafts.json";
+import batchJson from "./knowledge-batch2.json";
 import { checkKnowledgeCatalog, type KnowledgeArticle, type KnowledgeBlock, type KnowledgeCategorySlug } from "./knowledge";
 
 type SourceRow = { title: string; url: string };
@@ -8,10 +9,11 @@ type Row = {
   description: string;
   categorySlug: string;
   region: string;
-  status: "当前依据核实" | "窗口需确认";
+  status: "当前依据核实" | "窗口需确认" | "依据核实、受理窗口待确认";
   statusNote: string;
   checkedAt: string;
   sourceUrls: SourceRow[];
+  entryPointsUnchecked?: { title: string; url: string; note: string }[];
   body: string;
 };
 
@@ -49,12 +51,13 @@ function toArticle(raw: Row, relatedSlugs: string[]): KnowledgeArticle {
     validityNote: raw.statusNote,
     applicationWindow: null,
     sources: raw.sourceUrls.map((source) => ({ title: sourceTitle(source.title), url: source.url })),
+    uncheckedEntries: (raw.entryPointsUnchecked || []).map((entry) => ({ title: entry.title, url: entry.url, note: entry.note })),
     blocks: blocksFromBody(raw.body),
     relatedSlugs,
   };
 }
 
-const rawArticles = packageJson.articles as Row[];
+const rawArticles = [...(packageJson.articles as Row[]), ...(batchJson.articles as Row[])];
 const grouped = new Map<string, string[]>();
 for (const article of rawArticles) {
   const list = grouped.get(article.categorySlug) || [];
