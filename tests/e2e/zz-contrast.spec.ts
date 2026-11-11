@@ -154,7 +154,7 @@ test("页面文字在默认、悬停、焦点和禁用时都可读", async ({ pa
   test.setTimeout(240_000);
   await page.setViewportSize(DESKTOP);
 
-  for (const path of ["/", "/login", "/register", "/legal/privacy", "/legal/consent", "/legal/terms"]) {
+  for (const path of ["/", "/knowledge", "/knowledge/subsidy", "/knowledge/business", "/knowledge/ip", "/login", "/register", "/legal/privacy", "/legal/consent", "/legal/terms"]) {
     await page.goto(path);
     await axe(page, `desktop ${path}`);
   }

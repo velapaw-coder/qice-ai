@@ -1,4 +1,6 @@
 import { COMPANY_NAME, homeArticleHtml, KEYWORDS, SITE_DESCRIPTION, SITE_TITLE } from "../shared/growthHome";
+import { knowledgeJsonLd, renderKnowledgeHtml, knowledgeSitemapPaths, type KnowledgeModel } from "../shared/knowledge";
+import { visibleKnowledge } from "../shared/visibleKnowledge";
 import { APK_DOWNLOAD_URL } from "./apk";
 
 export { KEYWORDS, SITE_DESCRIPTION, SITE_TITLE };
@@ -91,7 +93,8 @@ export function robotsTxt(): string {
 }
 
 export function sitemapXml(): string {
-  const urls = SITEMAP_PATHS.map((path) => `  <url><loc>${canonicalFor("", path)}</loc></url>`).join("\n");
+  const paths = [...SITEMAP_PATHS, ...knowledgeSitemapPaths(visibleKnowledge)];
+  const urls = paths.map((path) => `  <url><loc>${canonicalFor("", path)}</loc></url>`).join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
 }
 
@@ -223,11 +226,44 @@ export function decorateHtml(indexHtml: string, path: string): string {
   return html.replace(/<\/body>/i, `<noscript><article id="qice-seo">${article}</article></noscript></body>`);
 }
 
-export function documentHeaders(path: string): Record<string, string> {
+export function documentHeaders(path: string, extra?: { noindex?: boolean }): Record<string, string> {
   const headers: Record<string, string> = {
     "content-type": "text/html; charset=utf-8",
     "cache-control": "no-cache",
   };
-  if (shouldNoindex(path)) headers["x-robots-tag"] = "noindex, nofollow";
+  if (extra?.noindex || shouldNoindex(path)) headers["x-robots-tag"] = "noindex, nofollow";
   return headers;
+}
+
+/** 知识库页替换标题和摘要，正文只使用已转义的结构化 HTML。 */
+export function decorateKnowledgeHtml(indexHtml: string, model: KnowledgeModel): string {
+  const canonical = canonicalFor("", model.canonicalPath);
+  const title = model.title;
+  const description = model.description;
+  let html = indexHtml.replace(/<title>[^<]*<\/title>/i, `<title>${esc(title)}</title>`);
+  html = html.replace(/<meta name="description" content="[^"]*"/i, `<meta name="description" content="${esc(description)}"`);
+  const tags = model.indexable
+    ? [
+        `<link rel="canonical" href="${esc(canonical)}" />`,
+        `<meta name="google-site-verification" content="${GOOGLE_SITE_VERIFICATION}" />`,
+        `<meta property="og:title" content="${esc(title)}" />`,
+        `<meta property="og:description" content="${esc(description)}" />`,
+        `<meta property="og:image" content="${OG_IMAGE}" />`,
+        `<meta property="og:url" content="${esc(canonical)}" />`,
+        `<meta property="og:type" content="${model.kind === "article" ? "article" : "website"}" />`,
+        `<meta property="og:locale" content="zh_CN" />`,
+        knowledgeLd(model),
+      ]
+    : [`<link rel="canonical" href="${esc(canonical)}" />`, `<meta name="robots" content="noindex, nofollow" />`];
+  html = html.replace(/<\/head>/i, `${tags.filter(Boolean).join("\n")}\n</head>`);
+  const article = renderKnowledgeHtml(model);
+  const block = `<div id="root"><article id="qice-seo">${article}</article></div><script>var qiceSeo=document.getElementById("qice-seo");if(qiceSeo)qiceSeo.remove();</script>`;
+  if (/<div id="root">\s*<\/div>/.test(html)) return html.replace(/<div id="root">\s*<\/div>/, block);
+  return html.replace(/<\/body>/i, `<noscript><article id="qice-seo">${article}</article></noscript></body>`);
+}
+
+function knowledgeLd(model: KnowledgeModel): string {
+  const data = knowledgeJsonLd(model, SITE);
+  if (!data) return "";
+  return `<script type="application/ld+json">${JSON.stringify(data).replace(/</g, "\\u003c")}</script>`;
 }

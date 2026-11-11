@@ -48,13 +48,18 @@ describe("公开页 SEO", () => {
     expect(text).not.toMatch(/301|Location|redirect/i);
   });
 
-  it("sitemap 只列出首页和公开法律页", () => {
+  it("sitemap 列出首页、法律页和已公开知识文章", () => {
     const xml = sitemapXml();
     expect(SITEMAP_CONTENT_TYPE.startsWith("application/xml")).toBe(true);
     expect(xml).toContain("<loc>https://qicego.com/</loc>");
     expect(xml).toContain("<loc>https://qicego.com/legal/privacy</loc>");
     expect(xml).toContain("<loc>https://qicego.com/legal/consent</loc>");
     expect(xml).toContain("<loc>https://qicego.com/legal/terms</loc>");
+    expect(xml).toContain("<loc>https://qicego.com/knowledge</loc>");
+    expect(xml).toContain("<loc>https://qicego.com/knowledge/subsidy/key-group-employment-tax-incentive</loc>");
+    expect(xml).toContain("<loc>https://qicego.com/knowledge/subsidy/enterprise-subsidy-self-check</loc>");
+    expect(xml).toContain("<loc>https://qicego.com/knowledge/ip/trademark-registration-basics</loc>");
+    expect(xml.match(/<loc>/g)).toHaveLength(4 + 1 + 3 + 9);
     expect(xml).not.toContain("goqice.com");
     expect(xml).not.toContain("/login");
     expect(xml).not.toContain("/register");

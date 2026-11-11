@@ -54,6 +54,7 @@ const nav = [
   { href: "#process", label: "合作步骤" },
   { href: "#policy", label: "政策辅助" },
   { href: "#faq", label: "常见问题" },
+  { href: "/knowledge", label: "企业服务知识库" },
 ];
 
 function Section({
@@ -158,7 +159,7 @@ export function HomePage() {
           </a>
           <nav aria-label="页面导航" className="ml-6 hidden items-center gap-5 text-sm font-semibold text-[#526987] lg:flex">
             {nav.map((item) => (
-              <a key={item.href} href={item.href} className="hover:text-[#1e4fc8]">
+              <a key={item.href} href={item.href} className="hover:text-[#1e4fc8]" data-testid={item.href === "/knowledge" ? "knowledge-entry" : undefined}>
                 {item.label}
               </a>
             ))}
@@ -191,7 +192,7 @@ export function HomePage() {
           ×
         </button>
         {nav.map((item) => (
-          <a key={item.href} href={item.href} className="text-base font-bold text-white" onClick={() => setOpen(false)}>
+          <a key={item.href} href={item.href} className="text-base font-bold text-white" data-testid={item.href === "/knowledge" ? "knowledge-entry-drawer" : undefined} onClick={() => setOpen(false)}>
             {item.label}
           </a>
         ))}
@@ -442,6 +443,8 @@ export function HomePage() {
           <p className="text-sm">{BRAND_TAGLINE}</p>
           <p className="text-sm">{PUBLIC_SITE}</p>
           <p className="text-sm">
+            <Link className="font-bold text-white" to="/knowledge" data-testid="knowledge-footer">企业服务知识库</Link>
+            <span> · </span>
             <Link className="text-white" to="/legal/privacy">隐私政策</Link>
             <span> · </span>
             <Link className="text-white" to="/legal/consent">数据授权书</Link>
