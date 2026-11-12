@@ -1,8 +1,10 @@
 /**
  * 安卓安装包放在 Cloudflare R2，经 media.qicego.com 分发。
- * 换包时只改 ?v=，首页链接和旧地址跳转会一起更新。
+ * 换包时只改 shared/apkLink.ts 里的 ?v=，首页链接和旧地址跳转会一起更新。
  */
-export const APK_DOWNLOAD_URL = "https://media.qicego.com/site/qiceai-android.apk?v=12";
+import { APK_DOWNLOAD_URL } from "../shared/apkLink";
+
+export { APK_DOWNLOAD_URL };
 
 /**
  * R2 开发域名，只作备用记录。页面链接和 307 都不要用它。

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { DISCLAIMER } from "@shared/rules/evaluate";
+import { SS_DOWNLOAD_GUIDE } from "@shared/ssDownloadGuide";
 import { api, putFile } from "../lib/api";
 import { compressImage, extractionFromPdfText, maybeConvertHeic, parseSpreadsheet, readPdf, textExtractionUseful } from "../lib/files";
 import { recognizePages } from "../lib/vision";
@@ -108,7 +109,7 @@ function progressIndex(status: string) {
 function StatusHome({ me }: { me: Me }) {
   const status = me.enterprise?.status || "待上传";
   const text: Record<string, string> = {
-    待上传: "请上传两份资料",
+    待上传: "请上传本单位社保人员清单",
     识别中: "正在识别资料，请保持页面打开",
     需补传: me.enterprise?.status_note || "请按提示补充资料",
     待复核: "系统已出初稿，顾问正在复核，复核后会电话联系您",
@@ -259,7 +260,7 @@ function UploadPage({ me }: { me: Me }) {
   const link = typeof window === "undefined" ? "" : window.location.origin + "/app/upload";
   return (
     <div className="space-y-4" data-testid="upload-page">
-      <PageHeader kicker="上传资料" title="两份表就够开始" description="有 Excel 原件时优先上传原件。文件较大时建议用电脑。手机里如果选不到聊天文件，可以拍照，或把链接发给电脑。" />
+      <PageHeader kicker="上传资料" title="上传本单位社保人员清单" description="有 Excel 原件时优先上传原件。文件较大时建议用电脑。手机里如果选不到聊天文件，可以拍照，或把链接发给电脑。新办理不需要再上传税表。" />
       <Card>
         <div className="flex items-start gap-3">
           <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[15px] bg-[#edf3ff] text-xl text-[#2d62eb]">▣</span>
@@ -279,13 +280,28 @@ function UploadPage({ me }: { me: Me }) {
         </div>
       </Card>
       <Card>
-        <div className="flex items-start gap-3">
-          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[15px] bg-[#edf3ff] text-xl text-[#2d62eb]">▤</span>
-          <div className="min-w-0 flex-1">
-            <h2 className="font-semibold text-navy">最近一年增值税申报表</h2>
-            <p className="text-sm text-muted">可多选，月报或季报都可以，最多 30 个文件。</p>
-            <Input className="mt-3 file:mr-3 file:rounded-[11px] file:border-0 file:bg-brand file:px-3 file:py-2 file:text-sm file:font-bold file:text-white" type="file" multiple accept=".xlsx,.xls,.csv,.pdf,.jpg,.jpeg,.png,.heic" data-testid="vat-file" onChange={(e) => onPick("vat", e.target.files)} />
-            <div className="mt-2"><UploadConsentLine marked /></div>
+        <div data-testid="ss-download-help">
+          <h2 className="font-semibold text-navy">怎么下载这份清单</h2>
+          <p className="mt-2 text-sm leading-6 text-ink">{SS_DOWNLOAD_GUIDE.what}</p>
+          <p className="mt-2 text-sm font-semibold leading-6 text-navy">{SS_DOWNLOAD_GUIDE.notSubstitute}</p>
+          <p className="mt-2 text-sm leading-6 text-[#3e4e68]">{SS_DOWNLOAD_GUIDE.formats}</p>
+          <p className="mt-2 text-sm leading-6 text-[#3e4e68]">{SS_DOWNLOAD_GUIDE.privacy}</p>
+          <div className="mt-3 space-y-2">
+            {SS_DOWNLOAD_GUIDE.regions.map((region) => (
+              <details key={region.id} className="rounded-[12px] border border-[#d8e1ef] px-3 py-2" data-testid={`ss-guide-${region.id}`}>
+                <summary className="cursor-pointer text-sm font-bold text-navy">{region.title}</summary>
+                <p className="mt-2 text-sm leading-6">{region.summary}</p>
+                {region.link ? (
+                  <p className="mt-2 text-sm leading-6">
+                    <a className="font-semibold text-[#1e4fc8]" href={region.link.href}>{region.link.label}</a>
+                    <span> {region.link.caveat}</span>
+                  </p>
+                ) : null}
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6">
+                  {region.details.map((line) => <li key={line}>{line}</li>)}
+                </ul>
+              </details>
+            ))}
           </div>
         </div>
       </Card>
@@ -293,10 +309,10 @@ function UploadPage({ me }: { me: Me }) {
         <div className="flex items-start gap-3">
           <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[15px] bg-[#edf3ff] text-xl text-[#2d62eb]">▥</span>
           <div className="min-w-0 flex-1">
-            <h2 className="font-semibold text-navy">最新一个月社保清单</h2>
-            <p className="text-sm text-muted">最多 10 个文件，照片可以一页一张。</p>
+            <h2 className="font-semibold text-navy">本单位社保人员清单</h2>
+            <p className="text-sm text-muted">最多 10 个文件。请上传单位人员明细，不要上传税表。</p>
             <Input className="mt-3 file:mr-3 file:rounded-[11px] file:border-0 file:bg-brand file:px-3 file:py-2 file:text-sm file:font-bold file:text-white" type="file" multiple accept=".xlsx,.xls,.csv,.pdf,.jpg,.jpeg,.png,.heic" data-testid="ss-file" onChange={(e) => onPick("social_security", e.target.files)} />
-            <div className="mt-2"><UploadConsentLine /></div>
+            <div className="mt-2"><UploadConsentLine marked /></div>
           </div>
         </div>
       </Card>

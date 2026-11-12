@@ -143,7 +143,8 @@ async function register(page: Page) {
 }
 
 async function login(page: Page, phone: string, password: string) {
-  await page.goto("/login");
+  if (!page.url().includes("/login")) await page.goto("/login");
+  await expect(page.getByTestId("login-phone")).toBeVisible();
   await page.getByTestId("login-phone").fill(phone);
   await page.getByTestId("login-password").fill(password);
   await page.getByTestId("login-submit").click();
@@ -153,7 +154,7 @@ test("页面文字在默认、悬停、焦点和禁用时都可读", async ({ pa
   test.setTimeout(240_000);
   await page.setViewportSize(DESKTOP);
 
-  for (const path of ["/", "/login", "/register", "/legal/privacy", "/legal/consent", "/legal/terms"]) {
+  for (const path of ["/", "/knowledge", "/knowledge/subsidy", "/knowledge/business", "/knowledge/ip", "/login", "/register", "/legal/privacy", "/legal/consent", "/legal/terms"]) {
     await page.goto(path);
     await axe(page, `desktop ${path}`);
   }
@@ -194,12 +195,13 @@ test("页面文字在默认、悬停、焦点和禁用时都可读", async ({ pa
   await page.setViewportSize(DESKTOP);
   await page.goto("/app/settings");
   await page.getByTestId("logout").click();
+  await page.waitForURL("**/login");
   await login(page, "13800000000", "Admin1234");
   await expect(page.getByTestId("workspace-label")).toHaveText("管理员工作台");
   await expect(page.locator(".nav-pill[aria-current='page']")).toContainText("待办");
   await expect(page.locator(".nav-pill[aria-current='page']")).toHaveCSS("color", "rgb(12, 24, 50)");
   await expect(page.locator(".nav-pill[aria-current='page'] .nav-icon")).toHaveCSS("color", "rgb(30, 79, 200)");
-  const adminPaths = ["/admin", "/admin/enterprises", "/admin/deals/policy", "/admin/deals/fde", "/admin/policies", "/admin/policy-drafts", "/admin/policy-sources", "/admin/crawl-runs", "/admin/ai-settings", "/admin/users", "/admin/audit", "/admin/settings"];
+  const adminPaths = ["/admin", "/admin/enterprises", "/admin/growth-leads", "/admin/deals/policy", "/admin/deals/fde", "/admin/policies", "/admin/policy-drafts", "/admin/policy-sources", "/admin/crawl-runs", "/admin/ai-settings", "/admin/users", "/admin/audit", "/admin/settings"];
   for (const path of adminPaths) {
     await page.goto(path);
     await axe(page, `admin ${path}`);
@@ -225,6 +227,7 @@ test("页面文字在默认、悬停、焦点和禁用时都可读", async ({ pa
 
   await page.setViewportSize(DESKTOP);
   await page.getByTestId("admin-logout").click();
+  await page.waitForURL("**/login");
   await login(page, "13900000003", password!);
   await expect(page.getByTestId("workspace-label")).toHaveText("顾问工作台");
   await axe(page, "consultant change-password");

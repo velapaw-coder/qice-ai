@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { formatPublicBand, suggestBand, type EstimateBand } from "../../shared/bands";
 import { DISCLAIMER } from "../../shared/rules/evaluate";
 import { extractionLooksUnsafe } from "../../shared/profile";
+import { enterpriseUploadKindError, socialSecuritySubmitError } from "../../shared/ssSubmit";
 import { isValidUscc } from "../../shared/uscc";
 import { applyExtraction, fileExtractions, getEnterprise, runMatch, setStatus } from "../match";
 import { consentFailure, withUploadConsent } from "../consent";
@@ -84,7 +85,8 @@ enterpriseRoutes.post("/files", async (c) => {
     parent_file_id?: string;
   }>(c.req.raw);
   if (!body?.kind || !body.filename || !body.source_type) return c.json({ error: "文件信息不完整" }, 400);
-  if (!["vat", "social_security"].includes(body.kind)) return c.json({ error: "文件类型不正确" }, 400);
+  const kindError = enterpriseUploadKindError(body.kind);
+  if (kindError) return c.json({ error: kindError }, 400);
   const size = Number(body.size || 0);
   if (size <= 0 || size > 10 * 1024 * 1024) return c.json({ error: "单个表格或 PDF 不能超过 10MB" }, 400);
   const count = await c.env.DB.prepare(
@@ -255,13 +257,8 @@ enterpriseRoutes.post("/submit", async (c) => {
     .bind(ent.id)
     .all<{ id: string; kind: string; parse_status: string }>();
   const list = files.results || [];
-  const ok = (kind: string) => list.some((f) => f.kind === kind && (f.parse_status === "success" || f.parse_status === "partial"));
-  const any = (kind: string) => list.some((f) => f.kind === kind);
-  if (body?.manual) {
-    if (!any("vat") || !any("social_security")) return c.json({ error: "两个资料位都至少要有一个文件" }, 400);
-  } else if (!ok("vat") || !ok("social_security")) {
-    return c.json({ error: "增值税申报表和社保清单都至少要有一份识别成功的文件。也可以点「交给顾问处理」。" }, 400);
-  }
+  const gate = socialSecuritySubmitError(list, Boolean(body?.manual));
+  if (gate) return c.json({ error: gate }, 400);
   const extracted = await fileExtractions(c.env.DB, ent.id);
   const built = await applyExtraction(c.env, ent, extracted.map((e) => e.extraction), Boolean(body?.manual));
   if (built.unsupported) {
@@ -286,7 +283,7 @@ enterpriseRoutes.get("/report", async (c) => {
     .first<{ id: string; snapshot_json: string; estimate_low: number | null; estimate_high: number | null; published_at: string }>();
   if (ent.status !== "已发布" || !published) {
     const messages: Record<string, string> = {
-      待上传: "请上传两份资料",
+      待上传: "请上传本单位社保人员清单",
       识别中: "正在识别资料，请保持页面打开",
       需补传: ent.status_note || "请按提示补充资料",
       待复核: "系统已出初稿，顾问正在复核，复核后会电话联系您",

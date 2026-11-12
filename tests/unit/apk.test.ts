@@ -1,6 +1,6 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { homeHtml } from "../../src/client/home/markup";
+import { homeArticleHtml } from "../../src/shared/growthHome";
 import { APK_DOWNLOAD_URL, APK_R2_DEV_URL, apkDownloadName, apkRedirectTarget } from "../../src/worker/apk";
 import worker from "../../src/worker/index";
 import { decorateHtml, pageKind } from "../../src/worker/seo";
@@ -26,14 +26,18 @@ describe("安卓安装包", () => {
   it("首页卡片指向 media.qicego.com，文案不变", () => {
     expect(APK_DOWNLOAD_URL).toBe("https://media.qicego.com/site/qiceai-android.apk?v=12");
     expect(APK_R2_DEV_URL).toBe("https://pub-e921aafb91ca4eafb5855ceb8ae23624.r2.dev/site/qiceai-android.apk?v=12");
-    expect(homeHtml).toContain(`href="${APK_DOWNLOAD_URL}"`);
-    expect(homeHtml).not.toContain(APK_R2_DEV_URL);
-    expect(homeHtml).not.toContain("r2.dev");
-    expect(homeHtml).not.toContain('download="qiceai-android.apk"');
-    expect(homeHtml).toContain('data-testid="android-download"');
-    expect(homeHtml).toContain("下载安卓版");
-    expect(homeHtml).toContain("允许安装未知来源");
-    expect(homeHtml).toContain("打开后进入 qicego.com");
+    const article = homeArticleHtml(APK_DOWNLOAD_URL);
+    const homeSource = readFileSync("src/client/pages/HomePage.tsx", "utf8");
+    expect(article).toContain(`href="${APK_DOWNLOAD_URL}">下载安卓版</a>`);
+    expect(article).not.toContain(APK_R2_DEV_URL);
+    expect(article).not.toContain("r2.dev");
+    expect(homeSource).toContain("APK_DOWNLOAD_URL");
+    expect(homeSource).not.toContain(APK_R2_DEV_URL);
+    expect(homeSource).not.toContain("r2.dev");
+    expect(homeSource).not.toContain('download="qiceai-android.apk"');
+    expect(homeSource).toContain('data-testid="android-download"');
+    expect(homeSource).toContain("APK_TITLE");
+    expect(homeSource).toContain("APK_HINT");
     expect(pageKind("/downloads/qiceai-android.apk")).toBeNull();
     const html = decorateHtml(shell, "/");
     expect(html).toContain(`href="${APK_DOWNLOAD_URL}">下载安卓版</a>`);

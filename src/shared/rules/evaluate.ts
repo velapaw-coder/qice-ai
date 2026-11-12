@@ -210,6 +210,7 @@ export function evaluate(profile: Profile, staff: StaffMap, rules: PolicyRule[],
     let tier: Tier = "go";
     const verify: string[] = [];
     const reasons: string[] = [];
+    let hardUnknown = false;
     const hard = rule.conditions.filter((c) => c.level === "hard");
     const soft = rule.conditions.filter((c) => c.level === "soft");
 
@@ -219,6 +220,7 @@ export function evaluate(profile: Profile, staff: StaffMap, rules: PolicyRule[],
         tier = "reject";
         reasons.push(cond.text);
       } else if (result === "unknown" && tier !== "reject") {
+        hardUnknown = true;
         tier = "verify";
         verify.push(cond.verify || cond.text);
       }
@@ -248,7 +250,7 @@ export function evaluate(profile: Profile, staff: StaffMap, rules: PolicyRule[],
       verify.unshift("待确认企业所在地区或主体类型");
     }
 
-    const est = tier === "reject" ? null : estimateOf(rule, profile, staff);
+    const est = tier === "reject" || hardUnknown ? null : estimateOf(rule, profile, staff);
     items.push(
       item(
         rule,

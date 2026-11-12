@@ -8,6 +8,8 @@ import {
   ROBOTS_CONTENT_TYPE,
   SITEMAP_CONTENT_TYPE,
   SITE,
+  SITE_DESCRIPTION,
+  SITE_TITLE,
   canonicalFor,
   cookieShouldBeSecure,
   decorateHtml,
@@ -23,8 +25,8 @@ const shell = `<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <title>企策AI｜企业政策优惠与AI智能化升级服务平台</title>
-    <meta name="description" content="企策AI提供企业政策优惠初步评估、专业申报协助与AI FDE智能化升级服务。" />
+    <title>${SITE_TITLE}</title>
+    <meta name="description" content="${SITE_DESCRIPTION}" />
   </head>
   <body>
     <div id="root"></div>
@@ -46,13 +48,20 @@ describe("公开页 SEO", () => {
     expect(text).not.toMatch(/301|Location|redirect/i);
   });
 
-  it("sitemap 只列出首页和公开法律页", () => {
+  it("sitemap 列出首页、法律页和已公开知识文章", () => {
     const xml = sitemapXml();
     expect(SITEMAP_CONTENT_TYPE.startsWith("application/xml")).toBe(true);
     expect(xml).toContain("<loc>https://qicego.com/</loc>");
     expect(xml).toContain("<loc>https://qicego.com/legal/privacy</loc>");
     expect(xml).toContain("<loc>https://qicego.com/legal/consent</loc>");
     expect(xml).toContain("<loc>https://qicego.com/legal/terms</loc>");
+    expect(xml).toContain("<loc>https://qicego.com/knowledge</loc>");
+    expect(xml).toContain("<loc>https://qicego.com/knowledge/subsidy/key-group-employment-tax-incentive</loc>");
+    expect(xml).toContain("<loc>https://qicego.com/knowledge/subsidy/enterprise-subsidy-self-check</loc>");
+    expect(xml).toContain("<loc>https://qicego.com/knowledge/ip/trademark-registration-basics</loc>");
+    expect(xml).toContain("<loc>https://qicego.com/knowledge/subsidy/one-time-expansion-employment-subsidy-2026</loc>");
+    expect(xml).not.toContain("/knowledge/nanshan");
+    expect(xml.match(/<loc>/g)).toHaveLength(4 + 1 + 3 + 20);
     expect(xml).not.toContain("goqice.com");
     expect(xml).not.toContain("/login");
     expect(xml).not.toContain("/register");
@@ -75,10 +84,28 @@ describe("公开页 SEO", () => {
     expect(html).toContain('"@type":"Organization"');
     expect(html).toContain('"@type":"WebSite"');
     expect(html).toContain("深圳市精灵探索科技有限公司");
-    expect(html).toContain("让政策红利助力企业 AI升级");
-    expect(html).toContain("从政策优惠到AI增效，一站式协同服务");
-    expect(html).toContain("员工超过10人就一定能获得补贴吗？");
-    expect(html).toContain("不能。10人以上只是本平台的业务初筛标准。");
+    expect(html).toContain("企策AI增长");
+    expect(html).toContain("AI驱动企业价值重构与长期增长陪跑平台");
+    expect(html).toContain("发现向往 · 连接同频 · 重构商业 · 共创增长");
+    expect(html).toContain("企策AI增长，不只是帮助企业用AI把今天的生意做得更好，更重要的是，陪伴企业重新发现客户的向往，创造明天的新生意。");
+    expect(html).toContain("发现人的真实向往，激活企业潜在价值");
+    expect(html).toContain("让企业通过AI创造新的商业可能与第二增长曲线");
+    expect(html).not.toContain("用AI发现人的真实向往，激活企业潜在价值，创造新的商业可能。");
+    expect(html).not.toContain("让同频的人相遇，让有价值的商业自然生长。");
+    expect(html).toContain("让AI真正进入业务，用可验证的改善支持企业增长。");
+    expect(html).not.toContain("同频匹配");
+    expect(html).toContain("询价整理与报价辅助");
+    expect(html).toContain("拟开放试点，需先确认适配，不是已经上线的成熟工具。");
+    expect(html).toContain("不承诺金额、审批结果，也不承诺政府为AI采购买单。");
+    expect(html).not.toContain("让政策红利");
+    expect(html).not.toContain("10人以上");
+    expect(html).toContain("这里不承诺固定天数、免费三年，提交后也不会自动开通。");
+    expect(html).not.toContain("员工超过10人就一定能获得补贴吗？");
+    const indexHtml = readFileSync("index.html", "utf8");
+    expect(indexHtml).toContain(`<title>${SITE_TITLE}</title>`);
+    expect(indexHtml).toContain(`content="${SITE_DESCRIPTION}"`);
+    expect(indexHtml).not.toContain("企业政策优惠");
+    expect(indexHtml).not.toContain("让政策红利");
     expect(html).toContain('id="qice-seo"');
     expect(html).toContain('getElementById("qice-seo")');
     expect(html.match(/rel="canonical"/g)).toHaveLength(1);
@@ -92,7 +119,7 @@ describe("公开页 SEO", () => {
       expect(shouldNoindex(path)).toBe(true);
       expect(html).toContain('name="robots" content="noindex, nofollow"');
       expect(html).toContain(`rel="canonical" href="https://qicego.com${path}"`);
-      expect(html).not.toContain("员工超过10人就一定能获得补贴吗？");
+      expect(html).not.toContain("询价整理与报价辅助");
       expect(html).not.toContain("og:image");
       expect(html).not.toContain("google-site-verification");
       expect(documentHeaders(path)["x-robots-tag"]).toBe("noindex, nofollow");
@@ -110,7 +137,7 @@ describe("公开页 SEO", () => {
     const unknown = decorateHtml(shell, "/legal/other");
     expect(shouldNoindex("/legal/other")).toBe(true);
     expect(unknown).toContain("noindex");
-    expect(unknown).not.toContain("让政策红利");
+    expect(unknown).not.toContain("询价整理与报价辅助");
   });
 
   it("旧主机名 301 到 qicego.com，并保留路径和查询", () => {

@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import "./index.css";
 import { HomePage } from "./pages/HomePage";
+import { KnowledgePage } from "./pages/KnowledgePage";
 import { LoginPage, RegisterPage } from "./pages/AuthPages";
 import { LegalPage } from "./pages/LegalPage";
 import { EnterpriseApp } from "./pages/EnterpriseApp";
@@ -13,6 +14,9 @@ createRoot(document.getElementById("root")!).render(
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<HomePage />} />
+        <Route path="/knowledge" element={<KnowledgePage />} />
+        <Route path="/knowledge/:category" element={<KnowledgePage />} />
+        <Route path="/knowledge/:category/:slug" element={<KnowledgePage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/legal/:doc" element={<LegalPage />} />

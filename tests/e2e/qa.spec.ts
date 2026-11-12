@@ -59,9 +59,7 @@ async function register(page: Page, name: string, phone: string, password: strin
   await expect(ready).toBeVisible();
 }
 
-async function uploadPair(page: Page, vat: string, ss: string) {
-  await page.getByTestId("vat-file").setInputFiles(vat);
-  await expect(page.locator("[data-testid='file-progress'] li").last()).toContainText("识别完成", { timeout: 60_000 });
+async function uploadSocial(page: Page, ss: string) {
   await page.getByTestId("ss-file").setInputFiles(ss);
   await expect(page.locator("[data-testid='file-progress'] li").last()).toContainText("识别完成", { timeout: 90_000 });
 }
@@ -69,7 +67,7 @@ async function uploadPair(page: Page, vat: string, ss: string) {
 async function openEnterprise(page: Page, name: string) {
   await page.goto("/admin/enterprises");
   await page.getByTestId("enterprise-search").fill(name);
-  await page.getByRole("link", { name, exact: true }).click();
+  await page.getByRole("link", { name, exact: true }).click({ timeout: 20_000 });
   await expect(page.getByTestId("admin-review")).toBeVisible();
 }
 
@@ -170,7 +168,7 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
     await expect(smallPage.getByTestId("upload-consent")).toContainText("上传即表示同意");
     const before = await (await smallPage.request.get("/api/consent/current")).json();
     expect(before.active).toBe(false);
-    await uploadPair(smallPage, SMALL_VAT, SMALL_SS);
+    await uploadSocial(smallPage, SMALL_SS);
     const after = await (await smallPage.request.get("/api/consent/current")).json();
     expect(after.active).toBe(true);
     expect(after.agreed.consent_version).toBe("v1");
@@ -178,7 +176,7 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
     await expect(smallPage.getByTestId("status-title")).toHaveText("待复核", { timeout: 30_000 });
 
     await openEnterprise(consultantPage, SMALL);
-    await expect(consultantPage.getByTestId("profile-facts")).toContainText("纳税人 small_scale");
+    await expect(consultantPage.getByTestId("profile-facts")).toContainText("纳税人 待识别");
     await expect(consultantPage.getByTestId("profile-facts")).toContainText("人数 15");
     await expect(consultantPage.getByTestId("profile-facts")).toContainText("地区 深圳");
     await expect(consultantPage.getByTestId("profile-facts")).toContainText("主体 enterprise");
@@ -238,30 +236,28 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
     await openEnterprise(consultantPage, SMALL);
     const download = await Promise.all([
       consultantPage.waitForEvent("download"),
-      consultantPage.getByTestId("download-vat").click(),
+      consultantPage.getByTestId("download-social_security").click(),
     ]).then(([file]) => file);
-    expect(download.suggestedFilename()).toContain("增值税");
+    expect(download.suggestedFilename()).toContain("社保");
     const zip = await Promise.all([
       consultantPage.waitForEvent("download"),
       consultantPage.getByTestId("zip").click(),
     ]).then(([file]) => file);
     const names = Object.keys(unzipSync(readFileSync(await zip.path())));
-    expect(names.some((name) => name.startsWith("增值税申报表/"))).toBe(true);
+    expect(names.some((name) => name.startsWith("增值税申报表/"))).toBe(false);
     expect(names.some((name) => name.startsWith("社保清单/"))).toBe(true);
 
     await register(dgPage, DONGGUAN, "13700000004", "Dongguan1");
-    await uploadPair(dgPage, DG_VAT, DG_SS);
+    await uploadSocial(dgPage, DG_SS);
     await dgPage.getByTestId("submit").click();
     await expect(dgPage.getByTestId("status-title")).toHaveText("待复核", { timeout: 30_000 });
     await openEnterprise(consultantPage, DONGGUAN);
-    await expect(consultantPage.getByTestId("profile-facts")).toContainText("纳税人 general");
+    await expect(consultantPage.getByTestId("profile-facts")).toContainText("纳税人 待识别");
     await expect(consultantPage.getByTestId("profile-facts")).toContainText("人数 80");
     await expect(consultantPage.getByTestId("profile-facts")).toContainText("地区 东莞");
     await shot(consultantPage, "qa-dongguan");
 
     await register(fixPage, FIX, "13700000005", "Badfile1234");
-    await fixPage.getByTestId("vat-file").setInputFiles(BAD);
-    await expect(fixPage.locator("[data-testid='file-progress'] li").last()).toContainText("识别不出", { timeout: 30_000 });
     await fixPage.getByTestId("ss-file").setInputFiles(BAD);
     await expect(fixPage.locator("[data-testid='file-progress'] li").last()).toContainText("识别不出");
     await fixPage.getByTestId("manual-submit").click();
@@ -274,12 +270,23 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
     await expect(fixPage.getByTestId("status-message")).toContainText(RETURN_NOTE);
     await shot(fixPage, "qa-return");
     await fixPage.getByRole("link", { name: "去上传" }).click();
-    await uploadPair(fixPage, FIX_VAT, FIX_SS);
+    await uploadSocial(fixPage, FIX_SS);
     await fixPage.getByTestId("submit").click();
     await expect(fixPage.getByTestId("status-title")).toHaveText("待复核", { timeout: 30_000 });
     await consultantPage.goto("/admin");
     await expect(consultantPage.getByRole("link", { name: FIX })).toBeVisible();
 
+    const soleList = await adminPage.request.get(`/api/admin/enterprises?q=${encodeURIComponent(SOLE)}&status=`);
+    const soleBody = (await soleList.json()) as { enterprises?: { name: string }[] };
+    if (!(soleBody.enterprises || []).some((item) => item.name === SOLE)) {
+      const sole = await browser.newContext();
+      contexts.push(sole);
+      const solePage = await sole.newPage();
+      await register(solePage, SOLE, "13700000002", "Sole12345");
+      await uploadSocial(solePage, "fixtures/fake/个体户-社保清单-合成.xlsx");
+      await solePage.getByTestId("submit").click();
+      await expect(solePage.getByTestId("status-title")).toHaveText("暂不支持", { timeout: 30_000 });
+    }
     await openEnterprise(adminPage, SOLE);
     await expect(adminPage.getByTestId("profile-facts")).toContainText("主体 individual");
     await expect(adminPage.getByTestId("admin-review")).toContainText("暂不支持");
@@ -496,7 +503,7 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
 
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
     await register(photoPage, "深圳合成拍照科技有限公司", "13700000008", "Photo2234");
-    await photoPage.getByTestId("vat-file").setInputFiles({ name: "合成申报表.png", mimeType: "image/png", buffer: png });
+    await photoPage.getByTestId("ss-file").setInputFiles({ name: "合成社保清单.png", mimeType: "image/png", buffer: png });
     await expect(photoPage.getByTestId("file-progress")).toContainText("识别完成", { timeout: 30_000 });
 
     await smallPage.goto("/app/settings");
@@ -545,6 +552,11 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
     await home.goto("/");
     await home.setViewportSize({ width: 390, height: 844 });
     await home.getByTestId("home-menu").click();
+    await expect(home.getByTestId("home-primary")).toHaveAttribute("href", "#contact");
+    await expect(home.getByTestId("home-secondary")).toHaveAttribute("href", "#contact");
+    await expect(home.getByTestId("policy-entry")).toHaveAttribute("href", "/register");
+    await expect(home.getByTestId("home-login")).toHaveAttribute("href", "/login");
+    await expect(home.getByTestId("android-download")).toHaveAttribute("href", "https://media.qicego.com/site/qiceai-android.apk?v=12");
     await expect(home.getByTestId("home-drawer")).toBeVisible();
     await assertNoDeadAnchors(home);
     await shot(home, "qa-home-drawer");
@@ -554,6 +566,7 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
     const routes = [
       "/admin",
       "/admin/enterprises",
+      "/admin/growth-leads",
       "/admin/deals/policy",
       "/admin/deals/fde",
       "/admin/policies",
@@ -572,6 +585,11 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
       expect(response?.status(), route).not.toBe(404);
       await assertNoDeadAnchors(adminPage);
     }
+    const consultantLeads = await consultantPage.goto("/admin/growth-leads");
+    expect(consultantLeads?.status()).not.toBe(404);
+    await expect(consultantPage.getByTestId("growth-lead-admin")).toBeVisible();
+    const enterpriseLeads = await smallPage.request.get("/api/admin/growth-leads");
+    expect(enterpriseLeads.status()).toBe(403);
     await adminPage.setViewportSize({ width: 390, height: 844 });
     await adminPage.goto("/admin");
     await adminPage.getByTestId("admin-menu").click();
@@ -606,7 +624,7 @@ test("合成案例、跨角色流程与死链", async ({ browser, baseURL }: { b
       const response = await adminPage.request.get(path);
       expect(response.status(), path).not.toBe(404);
     }
-    for (const file of ["src/client/pages/AdminApp.tsx", "src/client/pages/EnterpriseApp.tsx", "src/client/home/markup.ts", "src/client/pages/AuthPages.tsx"]) {
+    for (const file of ["src/client/pages/AdminApp.tsx", "src/client/pages/EnterpriseApp.tsx", "src/client/pages/HomePage.tsx", "src/client/pages/AuthPages.tsx"]) {
       expect(readFileSync(file, "utf8")).not.toContain('href="#"');
     }
   } finally {

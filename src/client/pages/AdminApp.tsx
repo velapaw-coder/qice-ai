@@ -11,6 +11,7 @@ import { formatRange } from "@shared/rules/evaluate";
 import { api } from "../lib/api";
 import { Banner, BrandMark, Button, Card, EmptyState, Input, Label, PageHeader, StatCard, Textarea, TierBadge } from "../components/ui";
 import { ChangePasswordPage, SelfPasswordForm } from "./AuthPages";
+import { GrowthLeadsPage } from "./GrowthLeadsPage";
 import { StaffProfile, StaffTicketList, TicketThread } from "./serviceDesk";
 
 const filterSelect = "app-select min-w-[9.5rem] shrink-0 rounded-[11px] border border-[#d8e1ef] bg-white px-3 text-[15px] text-ink";
@@ -20,6 +21,7 @@ const groups = [
     { to: "/admin", label: "待办", icon: "▣", end: true },
     { to: "/admin/enterprises", label: "企业", icon: "◎" },
     { to: "/admin/tickets", label: "工单", icon: "✉" },
+    { to: "/admin/growth-leads", label: "增长意向", icon: "◈" },
   ]},
   { label: "成交", items: [
     { to: "/admin/deals/policy", label: "政策线", icon: "▤" },
@@ -144,7 +146,7 @@ export function AdminApp() {
             <button type="button" className="mt-2 whitespace-nowrap text-sm font-semibold text-[#d5e2f7] hover:text-white" data-testid="admin-logout" onClick={logout}>退出登录</button>
           </div>
         </aside>
-        <main className="min-h-0 flex-1 overflow-y-auto text-[15px]">
+        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto text-[15px]">
         <div className="mx-auto w-full max-w-[1440px] px-4 py-5">
         <RoleContext.Provider value={me.user.role}>
         <FeedbackContext.Provider value={setFeedback}>
@@ -167,6 +169,7 @@ export function AdminApp() {
           <Route path="settings" element={<Settings />} />
           <Route path="profile" element={<StaffProfile />} />
           <Route path="tickets" element={<StaffTicketList />} />
+          <Route path="growth-leads" element={<GrowthLeadsPage />} />
           <Route path="tickets/:id" element={<TicketThread base="/admin" />} />
           <Route path="password" element={<MyPassword />} />
           <Route path="change-password" element={<ChangePasswordPage next="/admin" />} />
@@ -214,6 +217,7 @@ function useData<T>(path: string) {
 }
 
 function todoHref(key: string, row: Record<string, string>) {
+  if (key === "growth_leads") return `/admin/growth-leads#${row.id}`;
   if (key === "drafts") return `/admin/policy-drafts/${row.id}`;
   if (key === "expiring") return `/admin/policies/${row.id}`;
   return `/admin/enterprises/${row.enterprise_id || row.id}`;
@@ -233,7 +237,7 @@ function Todos() {
   const visible = focused ? [focused] : data.groups;
   return (
     <div className="space-y-4" data-testid="admin-home">
-      <PageHeader kicker="工作台" title="待办" description="先处理待复核和企业预约，再看补传、草稿和即将到期的规则。" />
+      <PageHeader kicker="工作台" title="待办" description="增长线索与已注册企业的预约分开。待联系要处理；已联系只在下次跟进到期时出现；搁置不进入待办。" />
       {focused ? <p className="text-sm text-muted" data-testid="todo-focus">正在查看：{focused.title}</p> : <p className="text-sm text-muted" data-testid="todo-focus">正在查看全部待办</p>}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
         {data.groups.map((group) => (
@@ -502,7 +506,7 @@ function EnterpriseDetail() {
           <ul className="mt-2 space-y-2 text-sm">
             {(data.files || []).filter((f: { parent_file_id?: string }) => !f.parent_file_id).map((f: { id: string; filename: string; kind: string; period_start?: string; size: number }) => (
               <li key={f.id} className="flex items-center justify-between gap-2">
-                <span className="truncate">{f.kind === "vat" ? "增值税" : "社保"} {f.period_start || ""} {f.filename}</span>
+                <span className="truncate">{f.kind === "vat" ? "历史增值税申报表" : "社保清单"} {f.period_start || ""} {f.filename}</span>
                 {ent.status === "已撤回" ? (
                   <span className="shrink-0 text-sm text-[#7f1d1d]">授权已撤回，不能下载</span>
                 ) : (

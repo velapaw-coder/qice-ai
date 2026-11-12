@@ -7,7 +7,9 @@ import { llmRoutes } from "./routes/llm";
 import { publicRoutes } from "./routes/public";
 import { ticketRoutes } from "./routes/tickets";
 import { apkRedirectTarget } from "./apk";
-import { decorateHtml, documentHeaders, pageKind, redirectLocation, robotsTxt, sitemapXml, GOOGLE_VERIFY_BODY, GOOGLE_VERIFY_CONTENT_TYPE, GOOGLE_VERIFY_PATH, ROBOTS_CONTENT_TYPE, SITEMAP_CONTENT_TYPE } from "./seo";
+import { resolveKnowledge } from "../shared/knowledge";
+import { visibleKnowledge } from "../shared/visibleKnowledge";
+import { decorateHtml, decorateKnowledgeHtml, documentHeaders, pageKind, redirectLocation, robotsTxt, sitemapXml, GOOGLE_VERIFY_BODY, GOOGLE_VERIFY_CONTENT_TYPE, GOOGLE_VERIFY_PATH, ROBOTS_CONTENT_TYPE, SITEMAP_CONTENT_TYPE } from "./seo";
 import { loadSession, type Env, type Role, type Vars } from "./util";
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -42,6 +44,18 @@ app.use("*", async (c, next) => {
   const apkTarget = apkRedirectTarget(normalized);
   if (apkTarget) {
     return c.body(null, 307, { location: apkTarget, "cache-control": "no-cache" });
+  }
+  const knowledge = resolveKnowledge(normalized, new URL(c.req.url).search, visibleKnowledge);
+  if (knowledge) {
+    const assetUrl = new URL(c.req.url);
+    assetUrl.pathname = "/index.html";
+    assetUrl.search = "";
+    const asset = await c.env.ASSETS.fetch(new Request(assetUrl.toString(), { method: "GET" }));
+    if (!asset.ok) return next();
+    const html = decorateKnowledgeHtml(await asset.text(), knowledge);
+    const headers = documentHeaders(normalized, { noindex: !knowledge.indexable });
+    if (c.req.method === "HEAD") return c.body(null, knowledge.status, headers);
+    return c.body(html, knowledge.status, headers);
   }
   if (!pageKind(normalized)) return next();
   const assetUrl = new URL(c.req.url);
@@ -87,6 +101,7 @@ function isPublic(path: string, method: string): boolean {
   if (path.startsWith("/api/legal/")) return method === "GET";
   if (path === "/api/auth/contact") return true;
   if (path === "/api/auth/register" || path === "/api/auth/login") return method === "POST";
+  if (path === "/api/growth-leads") return method === "POST";
   return false;
 }
 

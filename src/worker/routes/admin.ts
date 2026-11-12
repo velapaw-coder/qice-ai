@@ -13,6 +13,7 @@ import { decryptSecret, encryptSecret } from "../crypto";
 import { closeStaleCrawlRuns, enqueueCrawl, importTextDraft, joinUrl } from "../crawl";
 import { getEnterprise, loadEvalProfile, profileMap, runMatch, setStatus } from "../match";
 import { consentFailure, withUploadConsent } from "../consent";
+import { growthNoteError, growthStatusError, parseShanghaiDateTime } from "../../shared/growthLead";
 import { audit, beijingDate, clientIp, contentDisposition, hitLimit, notifyWecom, nowIso, readJson, requireStaff, setting, uid, type AppEnv } from "../util";
 
 export const adminRoutes = new Hono<AppEnv>();
@@ -31,7 +32,8 @@ adminRoutes.get("/admin/todos", async (c) => {
   const threeDays = new Date(Date.now() - 3 * 86400_000).toISOString();
   const today = new Date().toISOString().slice(0, 10);
   const soon = new Date(Date.now() + 30 * 86400_000).toISOString().slice(0, 10);
-  const [review, appointments, unsupported, resubmit, fresh, drafts, expiring] = await Promise.all([
+  const now = nowIso();
+  const [review, appointments, unsupported, resubmit, fresh, drafts, expiring, growthLeads] = await Promise.all([
     db.prepare("SELECT COUNT(*) AS n FROM enterprises WHERE status = '待复核' AND account_status = 'active'").first<{ n: number }>(),
     db.prepare("SELECT COUNT(*) AS n FROM appointments WHERE status = '待联系'").first<{ n: number }>(),
     db.prepare("SELECT COUNT(*) AS n FROM enterprises WHERE status = '暂不支持' AND account_status = 'active'").first<{ n: number }>(),
@@ -44,10 +46,15 @@ adminRoutes.get("/admin/todos", async (c) => {
     )
       .bind(soon, today)
       .first<{ n: number }>(),
+    db.prepare(
+      `SELECT COUNT(*) AS n FROM growth_leads
+       WHERE status = '待联系' OR (status = '已联系' AND next_follow_up_at IS NOT NULL AND next_follow_up_at <= ?)`,
+    ).bind(now).first<{ n: number }>(),
   ]);
   const groups = [
+    { key: "growth_leads", title: "增长线索", count: growthLeads?.n ?? 0 },
     { key: "review", title: "待复核", count: review?.n ?? 0 },
-    { key: "appointments", title: "新预约", count: appointments?.n ?? 0 },
+    { key: "appointments", title: "企业预约", count: appointments?.n ?? 0 },
     { key: "unsupported", title: "暂不支持", count: unsupported?.n ?? 0 },
     { key: "resubmit", title: "需补传超过 3 天", count: resubmit?.n ?? 0 },
     { key: "fresh", title: "新注册未上传超过 3 天", count: fresh?.n ?? 0 },
@@ -64,6 +71,15 @@ adminRoutes.get("/admin/todos", async (c) => {
         `SELECT a.id, a.enterprise_id, e.name, e.contact_phone, a.slot_pref, a.topic, a.note, a.created_at AS time
          FROM appointments a JOIN enterprises e ON e.id = a.enterprise_id WHERE a.status = '待联系' ORDER BY a.created_at DESC LIMIT 20`,
       ).all();
+    if (key === "growth_leads")
+      return db.prepare(
+        `SELECT l.id, l.company_name AS name, l.phone AS contact_phone, l.status, l.intent,
+                CASE WHEN l.status = '已联系' THEN l.next_follow_up_at ELSE l.created_at END AS time,
+                CASE WHEN l.status = '待联系' THEN '待联系' ELSE '到期跟进' END AS city
+         FROM growth_leads l
+         WHERE l.status = '待联系' OR (l.status = '已联系' AND l.next_follow_up_at IS NOT NULL AND l.next_follow_up_at <= ?)
+         ORDER BY COALESCE(l.next_follow_up_at, l.created_at) ASC LIMIT 20`,
+      ).bind(now).all();
     if (key === "drafts")
       return db.prepare("SELECT id, title, title AS name, status, created_at AS time FROM policy_drafts WHERE status = '待审核' ORDER BY created_at DESC LIMIT 20").all();
     if (key === "expiring")
@@ -684,6 +700,95 @@ adminRoutes.patch("/admin/appointments/:id", async (c) => {
   const body = await readJson<{ status?: string }>(c.req.raw);
   if (!body?.status || !["待联系", "已联系", "已取消"].includes(body.status)) return c.json({ error: "状态不正确" }, 400);
   await c.env.DB.prepare("UPDATE appointments SET status = ?, handled_by = ?, handled_at = ? WHERE id = ?").bind(body.status, c.get("userId"), nowIso(), c.req.param("id")).run();
+  return c.json({ ok: true });
+});
+
+adminRoutes.get("/admin/growth-lead-assignees", async (c) => {
+  const rows = await c.env.DB.prepare(
+    "SELECT id, name, role FROM users WHERE status = 'active' AND role IN ('admin', 'consultant') ORDER BY role, name",
+  ).all();
+  return c.json({ users: rows.results || [] });
+});
+
+adminRoutes.get("/admin/growth-leads", async (c) => {
+  const rows = await c.env.DB.prepare(
+    `SELECT l.id, l.source, l.intent, l.company_name, l.contact_name, l.phone, l.industry, l.pain, l.status, l.created_at,
+            l.assignee_id, l.next_follow_up_at, u.name AS assignee_name
+     FROM growth_leads l
+     LEFT JOIN users u ON u.id = l.assignee_id AND u.status = 'active' AND u.role IN ('admin', 'consultant')
+     ORDER BY l.created_at DESC LIMIT 100`,
+  ).all();
+  return c.json({ leads: rows.results || [] });
+});
+
+adminRoutes.get("/admin/growth-leads/:id/notes", async (c) => {
+  const lead = await c.env.DB.prepare("SELECT id FROM growth_leads WHERE id = ?").bind(c.req.param("id")).first();
+  if (!lead) return c.json({ error: "没有这条意向" }, 404);
+  const rows = await c.env.DB.prepare(
+    `SELECT n.id, n.body, n.created_at, n.author_id, u.name AS author_name
+     FROM growth_lead_notes n LEFT JOIN users u ON u.id = n.author_id
+     WHERE n.lead_id = ? ORDER BY n.created_at ASC`,
+  ).bind(c.req.param("id")).all();
+  return c.json({ notes: rows.results || [] });
+});
+
+adminRoutes.post("/admin/growth-leads/:id/notes", async (c) => {
+  const body = await readJson<{ body?: string }>(c.req.raw);
+  const problem = growthNoteError(body?.body);
+  if (problem) return c.json({ error: problem }, 400);
+  const id = c.req.param("id");
+  const lead = await c.env.DB.prepare("SELECT id FROM growth_leads WHERE id = ?").bind(id).first();
+  if (!lead) return c.json({ error: "没有这条意向" }, 404);
+  const noteId = uid();
+  const text = String(body?.body || "").trim();
+  await c.env.DB.prepare(
+    "INSERT INTO growth_lead_notes (id, lead_id, author_id, body, created_at) VALUES (?, ?, ?, ?, ?)",
+  ).bind(noteId, id, c.get("userId"), text, nowIso()).run();
+  await audit(c.env.DB, c.get("userId"), "growth_lead.note", "growth_lead", id, clientIp(c.req.raw));
+  return c.json({ id: noteId });
+});
+
+adminRoutes.patch("/admin/growth-leads/:id", async (c) => {
+  const body = await readJson<{ status?: string; assignee_id?: string | null; next_follow_up_at?: string | null }>(c.req.raw);
+  if (!body) return c.json({ error: "无法读取" }, 400);
+  const id = c.req.param("id");
+  const current = await c.env.DB.prepare("SELECT id, status, assignee_id, next_follow_up_at FROM growth_leads WHERE id = ?")
+    .bind(id)
+    .first<{ id: string; status: string; assignee_id: string | null; next_follow_up_at: string | null }>();
+  if (!current) return c.json({ error: "没有这条意向" }, 404);
+  const hasStatus = Object.prototype.hasOwnProperty.call(body, "status");
+  const hasAssignee = Object.prototype.hasOwnProperty.call(body, "assignee_id");
+  const hasFollowUp = Object.prototype.hasOwnProperty.call(body, "next_follow_up_at");
+  if (!hasStatus && !hasAssignee && !hasFollowUp) return c.json({ error: "没有要保存的内容" }, 400);
+  let status = current.status;
+  if (hasStatus) {
+    const problem = growthStatusError(String(body.status || ""));
+    if (problem) return c.json({ error: problem }, 400);
+    status = String(body.status);
+  }
+  let assigneeId = current.assignee_id;
+  if (hasAssignee) {
+    if (c.get("role") !== "admin") return c.json({ error: "只有管理员可以指定负责人" }, 403);
+    if (body.assignee_id == null || body.assignee_id === "") assigneeId = null;
+    else {
+      const staff = await c.env.DB.prepare(
+        "SELECT id FROM users WHERE id = ? AND status = 'active' AND role IN ('admin', 'consultant')",
+      ).bind(body.assignee_id).first<{ id: string }>();
+      if (!staff) return c.json({ error: "负责人只能是在职管理员或顾问" }, 400);
+      assigneeId = staff.id;
+    }
+  }
+  let followUp = current.next_follow_up_at;
+  if (hasFollowUp) {
+    const parsed = parseShanghaiDateTime(body.next_follow_up_at);
+    if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+    followUp = parsed.value;
+  }
+  await c.env.DB.prepare(
+    "UPDATE growth_leads SET status = ?, assignee_id = ?, next_follow_up_at = ?, handled_by = ?, handled_at = ? WHERE id = ?",
+  ).bind(status, assigneeId, followUp, c.get("userId"), nowIso(), id).run();
+  const action = hasAssignee ? "growth_lead.assign" : hasFollowUp ? "growth_lead.follow_up" : "growth_lead.update";
+  await audit(c.env.DB, c.get("userId"), action, "growth_lead", id, clientIp(c.req.raw));
   return c.json({ ok: true });
 });
 
