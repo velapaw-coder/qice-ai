@@ -506,7 +506,7 @@ function EnterpriseDetail() {
           <ul className="mt-2 space-y-2 text-sm">
             {(data.files || []).filter((f: { parent_file_id?: string }) => !f.parent_file_id).map((f: { id: string; filename: string; kind: string; period_start?: string; size: number }) => (
               <li key={f.id} className="flex items-center justify-between gap-2">
-                <span className="truncate">{f.kind === "vat" ? "增值税" : "社保"} {f.period_start || ""} {f.filename}</span>
+                <span className="truncate">{f.kind === "vat" ? "历史增值税申报表" : "社保清单"} {f.period_start || ""} {f.filename}</span>
                 {ent.status === "已撤回" ? (
                   <span className="shrink-0 text-sm text-[#7f1d1d]">授权已撤回，不能下载</span>
                 ) : (

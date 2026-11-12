@@ -440,6 +440,8 @@ function parseSocial(rows: string[][]): Extraction {
 
   if (badIds) warnings.push(`${badIds} 条证件号码校验未通过，未计入青年候选`);
   if (!people.size) return { ...emptyExtraction("社保清单里没有读到人员明细"), warnings };
+  const hasPay = iPersonal >= 0 || iEmployer >= 0;
+  if (!hasPay) warnings.push("清单没有个人或单位缴费金额列，缴费合计待顾问核实");
 
   let young = 0;
   let missingStart = 0;
@@ -477,8 +479,8 @@ function parseSocial(rows: string[][]): Extraction {
     region_hint,
     entity_hint,
     headcount: people.size,
-    ss_total_month: round2(total),
-    ss_personal_month: round2(personalCore),
+    ss_total_month: hasPay ? round2(total) : undefined,
+    ss_personal_month: hasPay ? round2(personalCore) : undefined,
     ss_by_insurance: byIns,
     young_candidates: young,
     warnings,

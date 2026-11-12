@@ -124,4 +124,16 @@ describe("表格解析", () => {
     expect(built.region_code).toBe("440300");
     expect(built.name_match).toBe(true);
   });
+
+  it("只有社保时不把缺税写成 0 或小微", () => {
+    const ss = parseMatrices(book("爱华-社保清单-合成.xlsx"), "爱华-社保清单-合成.xlsx");
+    const built = buildProfile({ registeredName: "深圳爱华国际教育科技有限公司", files: [ss] });
+    expect(built.profile.revenue_12m).toBeNull();
+    expect(built.profile.tax_paid_12m).toBeNull();
+    expect(built.profile.vat_paid_12m).toBeNull();
+    expect(built.profile.tax_normal).toBeNull();
+    expect(built.profile.size_class).toBeNull();
+    expect(built.profile.headcount).toBe(43);
+    expect(built.warnings.join("")).toContain("不能当作税额");
+  });
 });

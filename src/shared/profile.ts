@@ -35,9 +35,9 @@ function monthsCovered(periods: VatPeriod[]): number {
 }
 
 export function sizeClass(headcount: number | null, revenue: number | null): string | null {
-  if (headcount === null && revenue === null) return null;
-  const smallHead = headcount === null || headcount <= 300;
-  const smallRev = revenue === null || revenue < 20_000_000;
+  if (headcount === null || revenue === null) return null;
+  const smallHead = headcount <= 300;
+  const smallRev = revenue < 20_000_000;
   if (smallHead && smallRev) return "small";
   return "medium";
 }
@@ -113,6 +113,7 @@ export function buildProfile(input: {
     }
   }
   if (surtaxEstimated) warnings.push("附加税费按增值税的 12% 估算");
+  if (!hasVat && !hasSales) warnings.push("未提供增值税申报表。税额、营收和是否正常申报待顾问核实，社保单位缴费不能当作税额。");
   const covered = monthsCovered(periods);
   const tax_normal = covered >= 10 || periods.length >= 4;
 

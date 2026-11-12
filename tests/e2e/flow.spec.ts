@@ -37,10 +37,10 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
   await expect(companyPage.locator("text=企策AI").first()).toBeVisible();
   await expect(companyPage.locator("body")).not.toContainText("企益");
   await expect(companyPage.locator("body")).not.toContainText("30%");
-  await expect(companyPage.locator("text=系统智能测算，顾问复核")).toBeVisible();
+  await expect(companyPage.getByTestId("brand-line")).toHaveText("发现向往 · 连接同频 · 重构商业 · 共创增长");
   await shot(companyPage, "homepage");
   await mobilePage.goto("/");
-  await expect(mobilePage.locator("text=免费申请政策初评").first()).toBeVisible();
+  await expect(mobilePage.getByTestId("brand-line")).toHaveText("发现向往 · 连接同频 · 重构商业 · 共创增长");
   await shot(mobilePage, "homepage-mobile");
 
   await companyPage.goto("/register");
@@ -58,16 +58,14 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
   await expect(companyPage.getByTestId("link-privacy")).toHaveAttribute("href", "/legal/privacy");
   const beforeConsent = await (await companyPage.request.get("/api/consent/current")).json();
   expect(beforeConsent.active).toBe(false);
-  await expect(companyPage.getByTestId("vat-file")).toBeEnabled();
-  await companyPage.getByTestId("vat-file").setInputFiles(VAT);
+  await expect(companyPage.getByTestId("vat-file")).toHaveCount(0);
+  await expect(companyPage.getByTestId("ss-download-help")).toContainText("参保职工或缴费人员明细");
+  await companyPage.getByTestId("ss-file").setInputFiles(SS);
   await expect(companyPage.getByTestId("file-progress")).toContainText("识别完成");
   const afterConsent = await (await companyPage.request.get("/api/consent/current")).json();
   expect(afterConsent.active).toBe(true);
   expect(afterConsent.agreed.consent_version).toBe("v1");
   expect(afterConsent.agreed.agreed_at).toBeTruthy();
-  await companyPage.getByTestId("ss-file").setInputFiles(SS);
-  await expect(companyPage.locator("[data-testid='file-progress'] li")).toHaveCount(2);
-  await expect(companyPage.locator("[data-testid='file-progress'] li").nth(1)).toContainText("识别完成");
   await shot(companyPage, "upload");
 
   await adminPage.goto("/login");
@@ -153,14 +151,14 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
   const ruleMs = Number((await matched.innerText()).match(/(\d+(?:\.\d+)?)\s*ms/)?.[1]);
   expect(ruleMs).toBeLessThan(10);
   for (const code of GO) {
-    await expect(consultantPage.getByTestId(`tier-${code}`)).toContainText("可推进");
+    await expect(consultantPage.getByTestId(`tier-${code}`)).toContainText("需核实");
   }
   for (const code of VERIFY) {
     const card = consultantPage.getByTestId(`tier-${code}`);
     await expect(card).toContainText("需核实");
     await expect(card).not.toContainText("可推进");
   }
-  await expect(consultantPage.getByTestId("admin-estimate")).toContainText("最高约 1 万元");
+  await expect(consultantPage.getByTestId("admin-estimate")).toContainText("暂无可估算金额");
   await expect(consultantPage.getByTestId("band-select")).toHaveValue("1-3");
   await consultantPage.getByTestId("band-select").selectOption("3-8");
   await consultantPage.locator("main").evaluate((node) => { node.scrollTop = 0; });
@@ -214,9 +212,9 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
 
   const download = await Promise.all([
     consultantPage.waitForEvent("download"),
-    consultantPage.getByTestId("download-vat").click(),
+    consultantPage.getByTestId("download-social_security").click(),
   ]).then(([file]) => file);
-  expect(download.suggestedFilename()).toContain("增值税");
+  expect(download.suggestedFilename()).toContain("社保");
   const zip = await Promise.all([
     consultantPage.waitForEvent("download"),
     consultantPage.getByTestId("zip").click(),
@@ -224,7 +222,7 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
   expect(zip.suggestedFilename()).toContain("深圳爱华国际教育科技有限公司");
   const zipped = unzipSync(readFileSync(await zip.path()));
   const names = Object.keys(zipped);
-  expect(names.some((name) => name.startsWith("增值税申报表/"))).toBe(true);
+  expect(names.some((name) => name.startsWith("增值税申报表/"))).toBe(false);
   expect(names.some((name) => name.startsWith("社保清单/"))).toBe(true);
 
   const sole = await browser.newContext();
@@ -237,13 +235,9 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
   await solePage.getByTestId("password2").fill("Sole12345");
   await solePage.getByTestId("register-submit").click();
   await expect(solePage.getByTestId("upload-consent")).toBeVisible();
-  await expect(solePage.getByTestId("vat-file")).toBeEnabled();
-  await solePage.getByTestId("vat-file").setInputFiles(SOLE_VAT);
+  await solePage.getByTestId("ss-file").setInputFiles(SOLE_SS);
   await expect(solePage.locator("[data-testid='file-progress'] li")).toHaveCount(1);
   await expect(solePage.locator("[data-testid='file-progress'] li")).toContainText("识别完成");
-  await solePage.getByTestId("ss-file").setInputFiles(SOLE_SS);
-  await expect(solePage.locator("[data-testid='file-progress'] li")).toHaveCount(2);
-  await expect(solePage.locator("[data-testid='file-progress'] li").nth(1)).toContainText("识别完成");
   await solePage.getByTestId("submit").click();
   await expect(solePage.getByTestId("status-title")).toHaveText("暂不支持", { timeout: 30_000 });
 

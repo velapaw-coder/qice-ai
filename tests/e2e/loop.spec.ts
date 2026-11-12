@@ -94,8 +94,6 @@ test("闭环：建账号、复核发布、管道、规则、抓取、模型和�
       await companyPage.getByTestId("register-submit").click();
     }
     await expect(ready).toBeVisible();
-    await companyPage.getByTestId("vat-file").setInputFiles(VAT);
-    await expect(companyPage.locator("[data-testid='file-progress'] li").last()).toContainText("识别完成", { timeout: 60_000 });
     await companyPage.getByTestId("ss-file").setInputFiles(SS);
     await expect(companyPage.locator("[data-testid='file-progress'] li").last()).toContainText("识别完成", { timeout: 90_000 });
     await companyPage.getByTestId("submit").click();

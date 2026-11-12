@@ -68,7 +68,7 @@ export function RegisterPage() {
           <input name="company_website" tabIndex={-1} autoComplete="off" />
         </div>
         <Label>企业名称</Label>
-        <Input name="company_name" required minLength={2} maxLength={60} placeholder="与申报表上的纳税人名称一致" data-testid="company" />
+        <Input name="company_name" required minLength={2} maxLength={60} placeholder="与营业执照或社保清单上的单位名称一致" data-testid="company" />
         <Label>联系人</Label>
         <Input name="contact_name" required minLength={2} maxLength={20} data-testid="contact" />
         <Label>手机号</Label>

@@ -81,8 +81,8 @@ test("照片走视觉模型，未配置或失败时进入顾问复核", async ({
       await companyPage.getByTestId("register-submit").click();
     }
     await expect(ready).toHaveText("上传即表示同意《数据授权书》《隐私政策》（含资料存放于境外服务器）");
-    await expect(companyPage.getByTestId("vat-file")).toBeEnabled();
-    await companyPage.getByTestId("vat-file").setInputFiles("/tmp/qice-vision.png");
+    await expect(companyPage.getByTestId("ss-file")).toBeEnabled();
+    await companyPage.getByTestId("ss-file").setInputFiles("/tmp/qice-vision.png");
     await expect(companyPage.getByTestId("file-progress")).toContainText("未配置视觉模型");
     expect(hits).toHaveLength(0);
 
@@ -112,7 +112,7 @@ test("照片走视觉模型，未配置或失败时进入顾问复核", async ({
     expect(hits.some((body) => body.includes("image_url") && body.includes("社保清单"))).toBeTruthy();
 
     fail = true;
-    await companyPage.getByTestId("vat-file").setInputFiles("/tmp/qice-vision-2.png");
+    await companyPage.getByTestId("ss-file").setInputFiles("/tmp/qice-vision-2.png");
     await expect(companyPage.locator("[data-testid='file-progress'] li").nth(2)).toContainText("顾问");
   } finally {
     await admin.close();
