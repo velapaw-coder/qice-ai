@@ -58,10 +58,22 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
   await expect(companyPage.getByTestId("link-privacy")).toHaveAttribute("href", "/legal/privacy");
   const beforeConsent = await (await companyPage.request.get("/api/consent/current")).json();
   expect(beforeConsent.active).toBe(false);
+  const deniedVat = await companyPage.request.post("/api/files", {
+    data: { kind: "vat", source_type: "excel", filename: "税表.xlsx", size: 20 },
+    headers: { "content-type": "application/json", "x-qice-request": "1" },
+  });
+  expect(deniedVat.status()).toBe(400);
   await expect(companyPage.getByTestId("vat-file")).toHaveCount(0);
   await expect(companyPage.getByTestId("ss-download-help")).toContainText("参保职工或缴费人员明细");
   await companyPage.getByTestId("ss-file").setInputFiles(SS);
   await expect(companyPage.getByTestId("file-progress")).toContainText("识别完成");
+  await companyPage.getByTestId("ss-file").setInputFiles({
+    name: "爱华-社保清单-再次.xlsx",
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: readFileSync(SS),
+  });
+  await expect(companyPage.locator("[data-testid='file-progress'] li")).toHaveCount(2);
+  await expect(companyPage.locator("[data-testid='file-progress'] li").nth(1)).toContainText("识别完成");
   const afterConsent = await (await companyPage.request.get("/api/consent/current")).json();
   expect(afterConsent.active).toBe(true);
   expect(afterConsent.agreed.consent_version).toBe("v1");
@@ -212,7 +224,7 @@ test("爱华主流程与个体户暂不支持", async ({ browser }: { browser: B
 
   const download = await Promise.all([
     consultantPage.waitForEvent("download"),
-    consultantPage.getByTestId("download-social_security").click(),
+    consultantPage.getByTestId("download-social_security").first().click(),
   ]).then(([file]) => file);
   expect(download.suggestedFilename()).toContain("社保");
   const zip = await Promise.all([

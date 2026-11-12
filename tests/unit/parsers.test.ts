@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { buildProfile } from "@shared/profile";
 import { textFromPdfItems } from "@shared/parsers/pdfText";
-import { assertNoSecrets, makeChineseId, parseMatrices, parseVatText, type SheetMatrix } from "@shared/parsers/tabular";
+import { assertNoSecrets, makeChineseId, parseMatrices, parseSsText, parseVatText, type SheetMatrix } from "@shared/parsers/tabular";
 import { isValidUscc, makeUscc } from "@shared/uscc";
 import * as XLSX from "xlsx";
 
@@ -134,6 +134,76 @@ describe("表格解析", () => {
     expect(built.profile.tax_normal).toBeNull();
     expect(built.profile.size_class).toBeNull();
     expect(built.profile.headcount).toBe(43);
-    expect(built.warnings.join("")).toContain("不能当作税额");
+    expect(built.warnings.join("")).toContain("部分条件缺少依据，由顾问核实");
+    expect(built.warnings.join("")).not.toContain("未提供增值税申报表");
+    expect(built.profile.ss_total_month).not.toBe(built.profile.tax_paid_12m);
+    expect(built.profile.tax_paid_12m).toBeNull();
+  });
+
+  it("四种证件表头、前置标题、空格、BOM 和缺金额都能按社保清单解析", () => {
+    const id = makeChineseId("440300", "19900101", "001");
+    for (const header of ["证件号码", "证件号", "身份证号", "身份证"]) {
+      const parsed = parseMatrices([{
+        name: "s",
+        rows: [
+          ["单位职工缴费人员明细"],
+          ["单位名称", "合成表头企业"],
+          [` ${header} `, "险种", "个人缴纳", "单位缴纳"],
+          [id, "养老保险", "800", "1200"],
+        ],
+      }], "社保清单.csv");
+      expect(parsed.parse_status, header).not.toBe("failed");
+      expect(parsed.headcount, header).toBe(1);
+      expect(parsed.ss_personal_month, header).toBe(800);
+      expect(assertNoSecrets(parsed)).toBeNull();
+    }
+    const bom = parseMatrices([{
+      name: "s",
+      rows: [["\uFEFF身份证号", "险种"], [id, "养老保险"]],
+    }], "清单.xlsx");
+    expect(bom.parse_status).not.toBe("failed");
+    expect(bom.headcount).toBe(1);
+    const noPay = parseMatrices([{
+      name: "s",
+      rows: [["身份证", "姓名"], [id, "甲"]],
+    }], "社保.csv");
+    expect(noPay.parse_status).not.toBe("failed");
+    expect(noPay.headcount).toBe(1);
+    expect(noPay.ss_total_month).toBeUndefined();
+    expect(noPay.parse_note).toContain("缴费合计待顾问核实");
+    const built = buildProfile({ registeredName: "合成表头企业", files: [noPay] });
+    expect(built.profile.tax_paid_12m).toBeNull();
+    expect(built.profile.revenue_12m).toBeNull();
+    expect(built.profile.vat_paid_12m).toBeNull();
+    expect(built.profile.ss_total_month).toBeNull();
+    expect(parseMatrices([{ name: "s", rows: [] }], "社保.csv").parse_status).toBe("failed");
+    expect(parseMatrices([{ name: "s", rows: [["身份证号", "险种"]] }], "社保.csv").parse_status).toBe("failed");
+  });
+
+  it("文字版 PDF 能还原社保人员明细", async () => {
+    const { PDFDocument, StandardFonts } = await import("pdf-lib");
+    const fontkit = await import("@pdf-lib/fontkit");
+    const id = makeChineseId("440300", "19900101", "001");
+    const pdf = await PDFDocument.create();
+    pdf.registerFontkit(fontkit.default);
+    const font = await pdf.embedFont(readFileSync("/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf"));
+    const latin = await pdf.embedFont(StandardFonts.Helvetica);
+    const page = pdf.addPage([640, 400]);
+    page.drawText("单位名称  合成文字社保企业", { x: 40, y: 340, size: 12, font });
+    page.drawText("身份证号  险种  个人缴纳  单位缴纳", { x: 40, y: 312, size: 12, font });
+    page.drawText(`${id}  `, { x: 40, y: 284, size: 12, font: latin });
+    page.drawText("养老保险  ", { x: 180, y: 284, size: 12, font });
+    page.drawText("800  1200", { x: 280, y: 284, size: 12, font: latin });
+    const data = await pdf.save();
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const doc = await pdfjs.getDocument({ data, disableWorker: true, isEvalSupported: false } as Parameters<typeof pdfjs.getDocument>[0]).promise;
+    const content = await (await doc.getPage(1)).getTextContent();
+    const text = textFromPdfItems(content.items as { str?: string; transform?: number[] }[]);
+    const parsed = parseSsText(text);
+    expect(text).toContain("身份证号");
+    expect(parsed.parse_status).not.toBe("failed");
+    expect(parsed.headcount).toBe(1);
+    expect(parsed.ss_personal_month).toBe(800);
+    expect(assertNoSecrets(parsed)).toBeNull();
   });
 });

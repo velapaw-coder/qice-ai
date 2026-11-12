@@ -48,7 +48,27 @@ export function emptyExtraction(note: string): Extraction {
 }
 
 function norm(s: string): string {
-  return s.replace(/\s+/g, "").replace(/[：:]/g, "").toLowerCase();
+  return s.replace(/^\uFEFF+/, "").replace(/[\s\u3000\u00a0]+/g, "").replace(/[：:]/g, "").toLowerCase();
+}
+
+const SS_ID_LABELS = ["证件号码", "身份证号", "证件号", "身份证"];
+
+function isIdHeaderCell(cell: string): boolean {
+  const value = norm(cell);
+  if (!value || value.length > 8) return false;
+  return SS_ID_LABELS.some((label) => {
+    const want = norm(label);
+    return value === want || value.startsWith(want);
+  });
+}
+
+function findIdHeader(rows: string[][]): number {
+  for (let r = 0; r < rows.length; r++) {
+    const cells = rows[r] ?? [];
+    if (!cells.some(isIdHeaderCell)) continue;
+    if (colIndex(cells, SS_ID_LABELS) >= 0) return r;
+  }
+  return -1;
 }
 
 function parseNumber(raw: string | undefined): number | undefined {
@@ -249,7 +269,9 @@ function periodsFromTokens(text: string): VatPeriod[] {
 
 export function parseSsText(text: string): Extraction {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  return parseSocial(lines.map((l) => l.split(/\t|\s{2,}|\|/)));
+  const wide = parseSocial(lines.map((l) => l.split(/\t|\s{2,}|\|/)));
+  if (wide.parse_status !== "failed") return wide;
+  return parseSocial(lines.map((l) => l.split(/\s+/)));
 }
 
 function parseVat(rows: string[][]): Extraction {
@@ -391,7 +413,7 @@ function parseSocial(rows: string[][]): Extraction {
   const periodDate = parseDate(periodText) || parseDate(periodText.replace("年", "-").replace("月", "-01"));
   const asOf = periodDate || "2026-09-30";
 
-  const headerAt = findHeader(rows, ["证件"]);
+  const headerAt = findIdHeader(rows);
   if (headerAt < 0) {
     return {
       ...emptyExtraction("没有找到证件号码列，请上传社保清单原表"),
@@ -401,7 +423,7 @@ function parseSocial(rows: string[][]): Extraction {
     };
   }
   const header = rows[headerAt] ?? [];
-  const iId = colIndex(header, ["证件号码", "身份证号", "证件号", "身份证"]);
+  const iId = colIndex(header, SS_ID_LABELS);
   const iIns = colIndex(header, ["险种", "险种类型", "征收品目"]);
   const iPersonal = colIndex(header, ["个人缴纳", "个人缴费", "个人部分"]);
   const iEmployer = colIndex(header, ["单位缴纳", "单位缴费", "单位部分"]);

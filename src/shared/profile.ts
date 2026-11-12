@@ -113,7 +113,7 @@ export function buildProfile(input: {
     }
   }
   if (surtaxEstimated) warnings.push("附加税费按增值税的 12% 估算");
-  if (!hasVat && !hasSales) warnings.push("未提供增值税申报表。税额、营收和是否正常申报待顾问核实，社保单位缴费不能当作税额。");
+  if (!hasVat && !hasSales) warnings.push("部分条件缺少依据，由顾问核实。税额、营收和是否正常申报没有从申报表确认，社保缴费合计不是税额。");
   const covered = monthsCovered(periods);
   const tax_normal = covered >= 10 || periods.length >= 4;
 

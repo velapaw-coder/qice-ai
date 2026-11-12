@@ -16,6 +16,10 @@ describe("只上传社保", () => {
     expect(socialSecuritySubmitError([{ kind: "social_security", parse_status: "failed" }], false)).toMatch(/重试/);
     expect(socialSecuritySubmitError([{ kind: "social_security", parse_status: "failed" }], true)).toBeNull();
     expect(socialSecuritySubmitError([], true)).toMatch(/请先上传/);
+    expect(socialSecuritySubmitError([
+      { kind: "social_security", parse_status: "success" },
+      { kind: "social_security", parse_status: "success" },
+    ], false)).toBeNull();
   });
 
   it("缺税额时相关项目待核实，不给出金额", () => {
